@@ -1,45 +1,84 @@
 // utils/socket.ts
-
 import { io, Socket } from "socket.io-client";
+
+interface ConnectionInfo {
+  url?: string;
+  dbName?: string;
+  user?: string;
+  password?: string;
+  host?: string;
+  database?: string;
+}
+
+interface ListenOptions {
+  usePolling?: boolean;
+  pollInterval?: number;
+}
 
 export class Client {
   private socket: Socket;
+  private dbType: string | null = null;
+  private connectionInfo: ConnectionInfo | null = null;
 
   constructor(url: string = "http://localhost:3000") {
     this.socket = io(url);
   }
 
-  // Subscribe to a channel
-  public subscribe(channel: string, callback: (data: any) => void) {
+  public database(type: "mongodb" | "mysql"): Client {
+    this.dbType = type;
+    return this;
+  }
+
+  public connection(info: ConnectionInfo): Client {
+    this.connectionInfo = info;
+    return this;
+  }
+
+  private initialize() {
+    if (!this.dbType || !this.connectionInfo) {
+      throw new Error("Database type and connection info must be provided.");
+    }
+    this.socket.emit("initialize", {
+      dbType: this.dbType,
+      connectionInfo: this.connectionInfo,
+    });
+  }
+
+  public subscribe(channel: string, callback: (data: any) => void): Client {
+    this.initialize();
     this.socket.emit("subscribe", channel);
     this.socket.on(channel, callback);
-    this.socket.on(channel, (data) => {
-      console.log(`received message: ${data.message}`); 
-    })
-    console.log(`Subscribed to channel: ${channel}, room: ${this.socket.id}`);
+    return this;
   }
 
-  // Unsubscribe from a channel
-  public unsubscribe(channel: string) {
+  public listen(channel: string, callback: (data: any) => void): Client {
+    this.initialize();
+    this.socket.emit("listen", channel);
+    this.socket.on(channel, callback);
+    return this;
+  }
+
+  public unsubscribe(channel: string): Client {
     this.socket.emit("unsubscribe", channel);
     this.socket.off(channel);
-    console.log(`Unsubscribed from channel: ${channel}`);
+    return this;
   }
 
-  // Send a message to a channel
-  public send(channel: string, message: string) {
+  public send(channel: string, message: string): Client {
     this.socket.emit("message", { channel, message });
-    console.log(`Message sent to channel ${channel}: ${message}`);
+    return this;
   }
 
-  public on(event: string, callback: (data: any) => void) {
-    this.socket.on(event, callback);
-    console.log(`Listening for event: ${event}`);
+  public action(channel: string, method: string, callback?: (data: any) => void): Client {
+    this.initialize();
+    this.socket.emit("action", { action: "execute", channel, method });
+    if (callback) {
+      this.socket.on(`${channel}:result`, callback);
+    }
+    return this;
   }
 
-  // Close the socket connection
-  public close() {
+  public close(): void {
     this.socket.close();
-    console.log("Socket connection closed");
   }
 }
