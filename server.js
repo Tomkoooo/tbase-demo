@@ -4,6 +4,7 @@ import next from "next";
 import { Server } from "socket.io";
 import { MongoClient } from "mongodb";
 import mysql from "mysql2/promise";
+import { ObjectId } from "mongodb";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "localhost";
@@ -103,11 +104,31 @@ class MongoDB extends Database {
     };
   }
 
-  async execute(method) {
+  async execute(code) {
     try {
-      const result = await eval(`(async () => { return await this.db.${method}; })()`);
+      let modifiedCode = code;
+      const idMatch = code.match(/_id:\s*"([^"]+)"/);
+      if (idMatch && idMatch[1]) {
+        const idValue = idMatch[1];
+        console.log(`Received _id from frontend: "${idValue}"`);
+        if (typeof idValue === "string" && idValue.length === 24) {
+          console.log(`Converting _id value "${idValue}" to ObjectId`);
+          // Szövegesen illesztjük be az ObjectId konstruktor hívást
+          modifiedCode = code.replace(`_id: "${idValue}"`, `_id: new ObjectId("${idValue}")`);
+        }
+      }
+      console.log(`Executing modified code: ${modifiedCode}`);
+
+      // Eval helyett függvényt használunk, amely megkapja az ObjectId-t és a db-t
+      const executeFn = new Function("ObjectId", "db", `
+        return (async () => { return await db.${modifiedCode}; })();
+      `);
+      const result = await executeFn(ObjectId, this.db);
+
+      console.log(`Execution result:`, result);
       return { status: "success", result };
     } catch (err) {
+      console.error(`Execution error: ${err.message}`);
       return { status: "error", error: `MongoDB execution error: ${err.message}` };
     }
   }
@@ -226,21 +247,85 @@ app.prepare().then(() => {
     })
 
     socket.on("action", async (data) => {
-      const { action, channel, method } = data;
+      const { action, channel, code, method } = data;
       const db = clientDatabases.get(socket.id);
       if (!db) {
         socket.emit("error", { message: "Database not initialized" });
         return;
       }
 
-      if (action === "execute" && method) {
-        const response = await db.execute(method);
+      if (action === "execute" && code) {
+        const rawResponse = await db.execute(code);
+        console.log(`Database action ${method} on ${channel}:`, rawResponse);
+
+        let response;
+        if (db instanceof MongoDB) {
+          switch (method) {
+            case "insert":
+              response = {
+                status: rawResponse.status,
+                result: { insertedId: rawResponse.result.insertedId },
+              };
+              break;
+            case "delete":
+              response = {
+                status: rawResponse.status,
+                result: { id: code.match(/_id: "([^"]+)"/)?.[1], deletedCount: rawResponse.result.deletedCount},
+              };
+              break;
+            case "update":
+              response = {
+                status: rawResponse.status,
+                result: {
+                  updatedId: code.match(/_id: "([^"]+)"/)?.[1],
+                  updatedDoc: rawResponse.result,
+                },
+              };
+              break;
+            case "get":
+              response = rawResponse; // A teljes eredményt visszaadjuk
+              break;
+            default:
+              response = rawResponse;
+          }
+        } else if (db instanceof MySQLDB) {
+          switch (method) {
+            case "insert":
+              response = {
+                status: rawResponse.status,
+                result: { insertId: rawResponse.result.insertId },
+              };
+              break;
+            case "delete":
+              response = {
+                status: rawResponse.status,
+                result: { affectedRows: rawResponse.result.affectedRows },
+              };
+              break;
+            case "update":
+              response = {
+                status: rawResponse.status,
+                result: { affectedRows: rawResponse.result.affectedRows },
+              };
+              break;
+            case "get":
+              response = rawResponse; // A teljes eredményt visszaadjuk
+              break;
+            default:
+              response = rawResponse;
+          }
+        }
+
+        // A kliensnek és a csatornára feliratkozott összes kliensnek elküldjük a választ
         socket.emit(`${channel}:result`, response);
+        if (channelClients[channel]) {
+          channelClients[channel].forEach((clientId) => {
+            if (clientId !== socket.id) { // Elkerüljük a duplikált küldést az eredeti kliensnek
+              io.to(clientId).emit(`${channel}`, response);
+            }
+          });
+        }
       }
-      //for each user that listen to the collection we emit the message
-      channelClients[channel]?.forEach((clientId) => {
-        io.to(clientId).emit(channel, { action, method });
-      });
     });
 
     socket.on("unsubscribe", (channel) => {
