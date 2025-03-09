@@ -184,7 +184,6 @@ export class Client {
               console.error(`${method} failed:`, response.message);
               if (callback) callback(response);
             }
-            
           });
         }
       },
@@ -223,8 +222,10 @@ export class Client {
 
     this.socket.on("account:result", (response) => {
       console.log("SignUp response:", response);
-      document.cookie = `t_auth=${response.token}`;
-      localStorage.setItem("t_auth", response.token);
+      if (response.status === "success" && response.token && response.sessionId) {
+        document.cookie = `t_auth=${response.sessionId} ; path=/`;
+        localStorage.setItem("t_auth", response.token);
+      }
       callback(response);
     });
 
@@ -239,7 +240,8 @@ export class Client {
     });
     this.socket.on("account:result", (response) => {
       console.log("SignIn response:", response);
-      if (response.status === "success" && response.token) {
+      if (response.status === "success" && response.token && response.sessionId) {
+        document.cookie = `t_auth=${response.sessionId} ; path=/`;
         localStorage.setItem("t_auth", response.token);
       }
       callback(response); // Hibák esetén is továbbítjuk a választ
@@ -250,11 +252,28 @@ export class Client {
   public account(): {
     get: (callback: (data: any) => void) => Client;
     getSession: (callback: (data: any) => void) => Client;
-    setSession: (sessionData: any, callback: (data: any) => void) => Client;
-    killSession: (callback: (data: any) => void) => Client;
-    changeSession: (newSessionData: any, callback: (data: any) => void) => Client;
-  } {
+    getSessions: (callback: (data: any) => void) => Client;
+    setSession: (sessionData: string, callback: (data: any) => void) => Client;
+    killSession: ( callback: (data: any) => void) => Client;
+    killSessions: (callback: (data: any) => void) => Client;
+    changeSession: (newSessionData: any, callback: (data: any) => void) => Client;} {
     this.initialize();
+
+    function getCookie(cname: string) {
+      let name = cname + "=";
+      let decodedCookie = decodeURIComponent(document.cookie);
+      let ca = decodedCookie.split(';');
+      for(let i = 0; i <ca.length; i++) {
+        let c = ca[i];
+        while (c.charAt(0) == ' ') {
+          c = c.substring(1);
+        }
+        if (c.indexOf(name) == 0) {
+          return c.substring(name.length, c.length);
+        }
+      }
+      return "";
+    }
 
     return {
       get: (callback: (data: any) => void): Client => {
@@ -268,16 +287,26 @@ export class Client {
       },
       getSession: (callback: (data: any) => void): Client => {
         const token = localStorage.getItem("t_auth");
-        this.socket.emit("account:action", { action: "getSession", token });
+        const session = getCookie("t_auth");
+        this.socket.emit("account:action", { action: "getSession", token, session });
         this.socket.on("account:session", (response) => {
           console.log("Get session response:", response);
           callback(response);
         });
         return this;
       },
-      setSession: (sessionData: any, callback: (data: any) => void): Client => {
+      getSessions: (callback: (data: any) => void): Client => {
         const token = localStorage.getItem("t_auth");
-        this.socket.emit("account:action", { action: "setSession", token, data: sessionData });
+        this.socket.emit("account:action", { action: "getSessions", token });
+        this.socket.on("account:session", (response) => {
+          console.log("Get session response:", response);
+          callback(response);
+        });
+        return this;
+      },
+      setSession: (sessionData: string, callback: (data: any) => void): Client => {
+        const session = getCookie("t_auth");
+        this.socket.emit("account:action", { action: "setSessions", session, data: sessionData });
         this.socket.on("account:result", (response) => {
           console.log("Set session response:", response);
           callback(response);
@@ -285,11 +314,28 @@ export class Client {
         return this;
       },
       killSession: (callback: (data: any) => void): Client => {
+        //get the session id from the cookies
         const token = localStorage.getItem("t_auth");
-        this.socket.emit("account:action", { action: "killSession", token });
+        const session = getCookie("t_auth");
+        this.socket.emit("account:action", { action: "killSession", token, session });
         this.socket.on("account:result", (response) => {
           console.log("Kill session response:", response);
           if (response.status === "success") {
+            document.cookie = "t_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            localStorage.removeItem("t_auth");
+          }
+          callback(response);
+        });
+        return this;
+      },
+      killSessions: (callback: (data: any) => void): Client => {
+        //get the session id from the cookies
+        const session = getCookie("t_auth");
+        this.socket.emit("account:action", { action: "killSessions", session });
+        this.socket.on("account:result", (response) => {
+          console.log("Kill session response:", response);
+          if (response.status === "success") {
+            document.cookie = "t_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
             localStorage.removeItem("t_auth");
           }
           callback(response);
@@ -297,8 +343,8 @@ export class Client {
         return this;
       },
       changeSession: (newSessionData: any, callback: (data: any) => void): Client => {
-        const token = localStorage.getItem("t_auth");
-        this.socket.emit("account:action", { action: "changeSession", token, data: newSessionData });
+        const session = getCookie("t_auth");
+        this.socket.emit("account:action", { action: "changeSession", session, data: newSessionData });
         this.socket.on("account:result", (response) => {
           console.log("Change session response:", response);
           callback(response);
@@ -321,6 +367,8 @@ export class Client {
     listAll: (callback: (data: any[]) => void) => Client;
     listOnline: (callback: (data: any[]) => void) => Client;
     listenOnlineUsers: (callback: (data: any[]) => void) => Client;
+    getUser: (userId: string, callback: (data: any) => void) => Client; 
+    getUsers: (userIds: string[], callback: (data: any) => void) => Client;
   } {
     this.initialize();
     return {
@@ -356,6 +404,24 @@ export class Client {
         this.socket.on("users:onlineChanged", (onlineUsersData) => {
           console.log("Online users changed:", onlineUsersData);
           callback(onlineUsersData); // Közvetlenül a kapott adatokat adjuk át
+        });
+        return this;
+      },
+      getUser: (userId: string, callback: (data: any) => void): Client => {
+        const token = localStorage.getItem("t_auth");
+        this.socket.emit("users:action", { action: "getUser", token, userId });
+        this.socket.on("users:get-user", (response) => {
+          console.log("Get user response:", response);
+          callback(response);
+        });
+        return this;
+      },
+      getUsers: (userIds: string[], callback: (data: any) => void): Client => {
+        const token = localStorage.getItem("t_auth");
+        this.socket.emit("users:action", { action: "getUsers", token, userIds });
+        this.socket.on("users:get-users", (response) => {
+          console.log("Get users response:", response);
+          callback(response);
         });
         return this;
       },
