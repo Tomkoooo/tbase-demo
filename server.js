@@ -3,7 +3,6 @@ import { createServer } from "node:http";
 import next from "next";
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
-import cors from "cors";
 
 import Notification from "./utils/notification.js";
 
@@ -40,13 +39,16 @@ app.prepare().then(() => {
       methods: ['GET', 'POST'],
     },
   });
-  const notificationHandler = new Notification();
+  const notificationHandlers = new Map();
   const channelClients = new Map();
   const clientDatabases = new Map();
   const onlineUsers = new Map();
+  let notificationHandler = new Notification();
 
   io.on("connection", (socket) => {
     console.log("Client connected: ", socket.id);
+
+// ----- SOCKET CONNECTIONS -----
 
     socket.on("close", () => {
       //close the db connection
@@ -54,6 +56,40 @@ app.prepare().then(() => {
       clientDatabases.delete(socket.id);
     });
 
+    socket.on("initializeNotification", async ({ dbType, connectionInfo }) => {
+      let db;
+      if (!clientDatabases.has(socket.id) && dbType === "mongodb") {
+        db = new MongoDB(connectionInfo);
+      } else if (!clientDatabases.has(socket.id) && dbType === "mysql") {
+        db = new MySQLDB(connectionInfo);
+      } else if (clientDatabases.has(socket.id)) {
+        db = clientDatabases.get(socket.id);
+       }
+      else {
+        socket.emit("error", { message: "Unsupported database type" });
+        return;
+      }
+
+      try {
+        await db.connect(connectionInfo);
+        if (!clientDatabases.has(socket.id)) {
+          clientDatabases.set(socket.id, db);
+          console.log(`Database initialized for client ${socket.id}: ${dbType}`);
+
+          // Create and store a new Notification instance with the db
+          notificationHandler = new Notification(db);
+          console.log(`Notification handler initialized for client`);
+        } else {
+          console.log("Database already initialized for client", socket.id);
+          db.close();
+        }
+      } catch (err) {
+        console.error("Database connection error:", err);
+        socket.emit("error", { message: "Failed to connect to database" });
+      }
+    });
+
+    // Handle database initialization
     socket.on("initialize", async ({ dbType, connectionInfo }) => {
       let db;
       if (dbType === "mongodb") {
@@ -69,9 +105,7 @@ app.prepare().then(() => {
         await db.connect(connectionInfo);
         if (!clientDatabases.has(socket.id)) {
           clientDatabases.set(socket.id, db);
-          console.log(
-            `Database initialized for client ${socket.id}: ${dbType}`
-          );
+          console.log(`Database initialized for client ${socket.id}: ${dbType}`);
         } else {
           console.log("Database already initialized for client", socket.id);
           db.close();
@@ -82,6 +116,28 @@ app.prepare().then(() => {
       }
     });
 
+    socket.on("disconnect", () => {
+      console.log("Client disconnected: ", socket.id);
+      clientDatabases.get(socket.id)?.close();
+      clientDatabases.delete(socket.id);
+      for (const [userId, socketId] of onlineUsers) {
+        if (socketId === socket.id) {
+          onlineUsers.delete(userId);
+          io.emit("users:onlineChanged", Array.from(onlineUsers.keys()));
+          break;
+        }
+      }
+      for (const channel in channelClients) {
+        channelClients[channel].delete(socket.id);
+        if (channelClients[channel].size === 0) {
+          delete channelClients[channel];
+        }
+      }
+    });
+  
+
+// ----- REALTIME API -----
+
     socket.on("listen", (channel) => {
       if (!channelClients[channel]) {
         channelClients[channel] = new Set();
@@ -89,6 +145,8 @@ app.prepare().then(() => {
       channelClients[channel].add(socket.id);
       socket.join(channel);
     });
+
+// ----- DATABASE API -----
 
     socket.on("action", async (data) => {
       const { action, channel, code, method } = data;
@@ -100,6 +158,12 @@ app.prepare().then(() => {
 
       if (action === "execute" && code) {
         const rawResponse = await db.execute(code);
+        console.log("Raw response:", rawResponse);
+
+        if(rawResponse.status === "error") {
+          socket.emit(`${channel}:result`, rawResponse);
+          return;
+        }
 
         let response;
         if (db instanceof MongoDB) {
@@ -137,21 +201,23 @@ app.prepare().then(() => {
         } else if (db instanceof MySQLDB) {
           switch (method) {
             case "insert":
+              const insertedUser = await db.getUser(rawResponse.result.insertId)
               response = {
                 status: rawResponse.status,
-                result: { insertId: rawResponse.result.insertId },
+                result: { insertId: rawResponse.result.insertId, insertedDoc: insertedUser },
               };
               break;
             case "delete":
               response = {
                 status: rawResponse.status,
-                result: { affectedRows: rawResponse.result.affectedRows },
+                result: { affectedRows: rawResponse.result.affectedRows, id: code.match(/WHERE id = (\d+)/)[1] },
               };
               break;
             case "update":
+              const updatedDoc = await db.getUser(code.match(/WHERE id = (\d+)/)[1]);
               response = {
                 status: rawResponse.status,
-                result: { affectedRows: rawResponse.result.affectedRows },
+                result: { affectedRows: rawResponse.result.affectedRows, updatedId: code.match(/WHERE id = (\d+)/)[1], updatedDoc },
               };
               break;
             case "get":
@@ -171,6 +237,8 @@ app.prepare().then(() => {
         }
       }
     });
+
+// ----- LISTENING API -----
 
     socket.on("unsubscribe", (channel) => {
       if (channelClients[channel]) {
@@ -197,6 +265,8 @@ app.prepare().then(() => {
       socket.join(channel);
     });
 
+//----- ACCOUNT API -----
+
     socket.on("account:action", async (data) => {
       const { action, data: payload, token, session } = data;
       const db = clientDatabases.get(socket.id);
@@ -217,7 +287,7 @@ app.prepare().then(() => {
               const userId = await db.signUp(payload);
               if (!userId) throw new Error("Signup failed");
               const sessionId = Math.random().toString(16).slice(2);
-              await db.setSession(userId, { sessionId });
+              await db.setSession(userId, sessionId);
               const signupToken = jwt.sign(
                 { userId: userId.toString(), email: payload.email },
                 SECRET_KEY,
@@ -242,9 +312,11 @@ app.prepare().then(() => {
               const user = await db.signIn(payload.email, payload.password);
               if (!user) throw new Error("User not found or invalid password");
               const sessionId = Math.random().toString(16).slice(2);
-              await db.setSession(user._id, sessionId); // Store session with sessionId
+              const userId = user.user._id || user.user.id;
+              console.log("User ID:", userId, user, user._id);
+              await db.setSession(userId, sessionId); // Store session with sessionId
               const signInToken = jwt.sign(
-                { userId: user._id, email: user.email },
+                { userId: userId, email: user.email },
                 SECRET_KEY,
                 { expiresIn: "24h" }
               );
@@ -451,7 +523,8 @@ app.prepare().then(() => {
       }
     });
 
-    // USERS SCOPE
+ //----- USERS API -----
+
     socket.on("users:action", async (data) => {
       const { action, token, userId, userIds } = data;
       const db = clientDatabases.get(socket.id);
@@ -477,13 +550,7 @@ app.prepare().then(() => {
 
         switch (action) {
           case "listAll":
-            const listAllQuery = `collection('users').find().toArray()`;
-            const allUsersResult = await db.execute(listAllQuery);
-            const allUsers = allUsersResult.result.map((user) => ({
-              _id: user._id.toString(),
-              email: user.email,
-              createdAt: user.createdAt,
-            }));
+            const allUsers = await db.listUsers();
             socket.emit("users:result", { status: "success", data: allUsers });
             break;
 
@@ -531,48 +598,184 @@ app.prepare().then(() => {
       }
     });
 
-    socket.on("disconnect", () => {
-      console.log("Client disconnected: ", socket.id);
-      clientDatabases.get(socket.id)?.close();
-      clientDatabases.delete(socket.id);
-      for (const [userId, socketId] of onlineUsers) {
-        if (socketId === socket.id) {
-          onlineUsers.delete(userId);
-          io.emit("users:onlineChanged", Array.from(onlineUsers.keys()));
-          break;
-        }
-      }
-      for (const channel in channelClients) {
-        channelClients[channel].delete(socket.id);
-        if (channelClients[channel].size === 0) {
-          delete channelClients[channel];
-        }
-      }
-    });
 
-    socket.on('subscribe:not', async ({ userId, subscription }) => {
-      if (!userId || !subscription) {
-        socket.emit('subscriptionError', { message: 'User ID and subscription required' });
-        return;
-      }
-      console.log('Subscription request:', userId, subscription);
-      const response = await notificationHandler.subscribe(userId, subscription);
-    });
-  
-    socket.on('unsubscribe:not', ({ userId, subscription }) => {
-      if (!userId || !subscription) {
-        socket.emit('subscriptionError', { message: 'User ID and subscription required' });
-        return;
-      }
+//----- NOTIFICATION API -----
+
+    // Subscribe to notifications
+  socket.on('subscribe:not', async ({ userId, subscription }) => {
+    if (!notificationHandler) {
+      notificationHandler = new Notification();
+    }
+    if (!userId || !subscription) {
+      console.error('Subscription error:', 'User ID and subscription required');
+      return;
+    }
+    console.log('Subscription request:', userId, subscription);
+    try {
+      await notificationHandler.subscribe(userId, subscription);
+      socket.emit('subscribed', { userId }); // Optional: confirm success to client
+    } catch (error) {
+      console.error(`Subscription error for ${socket.id}:`, error)    }
+  });
+
+  // Unsubscribe from notifications
+  socket.on('unsubscribe:not', ({ userId, subscription }) => {
+    if (!notificationHandler) {
+      notificationHandler = new Notification();
+    }
+    if (!userId || !subscription) {
+      console.error('Unsubscription error:', 'User ID and subscription required');
+      return;
+    }
+    try {
       notificationHandler.unsubscribe(userId, subscription);
+      socket.emit('unsubscribed', { userId }); // Optional: confirm success to client
+    } catch (error) {
+      console.error(`Unsubscription error for ${socket.id}:`, error);
+    }
+  });
+
+  // Send a notification
+  socket.on('sendNotification', ({ userId, notification }) => {
+    if (!notificationHandler) {
+      notificationHandler = new Notification();
+    }
+    notificationHandler.send(userId, notification).catch((error) => {
+      console.error(`Error sending notification for ${socket.id}:`, error);
     });
-  
-    socket.on('sendNotification', ({ userId, notification }) => {
-      notificationHandler.send(userId, notification).catch((error) => {
-        console.error('Error sending notification:', error);
-        socket.emit('notificationError', { message: 'Failed to send notification' });
-      });
-    });
+  });
+
+//----- BUCKET API -----
+
+  // Bucket létrehozása
+  socket.on('createBucket', async () => {
+    const db = clientDatabases.get(socket.id);
+    if (!db) {
+      socket.emit('error', { message: 'Database not initialized' });
+      return;
+    }
+    try {
+      const bucketId = await db.createBucket();
+      socket.emit('bucketCreated', { bucketId });
+    } catch (err) {
+      console.error('Create bucket error:', err);
+      socket.emit('error', { message: err.message || 'Failed to create bucket' });
+    }
+  });
+
+  // Fájl feltöltése egy bucketbe
+  socket.on('uploadFile', async ({ bucketId, file }) => {
+    const db = clientDatabases.get(socket.id);
+    if (!db) {
+      socket.emit('error', { message: 'Database not initialized' });
+      return;
+    }
+    try {
+      const fileId = await db.uploadFile(bucketId, file);
+      socket.emit('fileUploaded', { bucketId, fileId });
+    } catch (err) {
+      console.error('Upload file error:', err);
+      socket.emit('error', { message: err.message || 'Failed to upload file' });
+    }
+  });
+
+  // Fájl lekérdezése egy bucketből
+  socket.on('getFile', async ({ bucketId, fileId }) => {
+    const db = clientDatabases.get(socket.id);
+    if (!db) {
+      socket.emit('error', { message: 'Database not initialized' });
+      return;
+    }
+    try {
+      const file = await db.getFile(bucketId, fileId);
+      socket.emit('fileRetrieved', file);
+    } catch (err) {
+      console.error('Get file error:', err);
+      socket.emit('error', { message: err.message || 'Failed to retrieve file' });
+    }
+  });
+
+  // Fájlok listázása egy bucketben
+  socket.on('listFiles', async ({ bucketId }) => {
+    const db = clientDatabases.get(socket.id);
+    if (!db) {
+      socket.emit('error', { message: 'Database not initialized' });
+      return;
+    }
+    try {
+      const files = await db.listFiles(bucketId);
+      socket.emit('filesListed', { bucketId, files });
+    } catch (err) {
+      console.error('List files error:', err);
+      socket.emit('error', { message: err.message || 'Failed to list files' });
+    }
+  });
+
+  // Fájl törlése egy bucketből
+  socket.on('deleteFile', async ({ bucketId, fileId }) => {
+    const db = clientDatabases.get(socket.id);
+    if (!db) {
+      socket.emit('error', { message: 'Database not initialized' });
+      return;
+    }
+    try {
+      await db.deleteFile(bucketId, fileId);
+      socket.emit('fileDeleted', { bucketId, fileId });
+    } catch (err) {
+      console.error('Delete file error:', err);
+      socket.emit('error', { message: err.message || 'Failed to delete file' });
+    }
+  });
+
+  // List all buckets
+  socket.on("listBuckets", async () => {
+    const db = clientDatabases.get(socket.id);
+    if (!db) {
+      socket.emit("error", { message: "Database not initialized" });
+      return;
+    }
+    try {
+      const buckets = await db.listBuckets();
+      socket.emit("bucketsListed", { buckets });
+    } catch (err) {
+      console.error("List buckets error:", err);
+      socket.emit("error", { message: err.message || "Failed to list buckets" });
+    }
+  });
+
+  // Delete a bucket
+  socket.on("deleteBucket", async ({ bucketId }) => {
+    const db = clientDatabases.get(socket.id);
+    if (!db) {
+      socket.emit("error", { message: "Database not initialized" });
+      return;
+    }
+    try {
+      await db.deleteBucket(bucketId);
+      socket.emit("bucketDeleted", { bucketId });
+    } catch (err) {
+      console.error("Delete bucket error:", err);
+      socket.emit("error", { message: err.message || "Failed to delete bucket" });
+    }
+  });
+
+  // Rename a bucket
+  socket.on("renameBucket", async ({ oldBucketId, newBucketId }) => {
+    const db = clientDatabases.get(socket.id);
+    if (!db) {
+      socket.emit("error", { message: "Database not initialized" });
+      return;
+    }
+    try {
+      await db.renameBucket(oldBucketId, newBucketId);
+      socket.emit("bucketRenamed", { oldBucketId, newBucketId });
+    } catch (err) {
+      console.error("Rename bucket error:", err);
+      socket.emit("error", { message: err.message || "Failed to rename bucket" });
+    }
+  });
+
+
   });
 
   httpServer.listen(port, () => {

@@ -5,14 +5,20 @@ import Notification from './notification';
 
 //This function is used to check if the user is authenticated
 export const getSession = async (sessionId: string) => {
-    const db = new Database(new MongoDB("localhost:27017"));
+    const db = new Database(new MongoDB({
+        url: "mongodb://localhost:27017",
+        dbName: "socket-test",
+      }));
     if(!sessionId) return null;
     return await db.getSession(sessionId);
 }
 
 //This function is used to get the user data
 export const getUser = async (req: NextRequest) => {
-    const db = new Database(new MongoDB("localhost:27017"));
+    const db = new Database(new MongoDB({
+        url: "mongodb://localhost:27017",
+        dbName: "socket-test",
+      }));
     const session = req.cookies.get('t_auth');
     if(!session) return null;
     const userId = await getSession(session.value);
@@ -23,7 +29,12 @@ export const getUser = async (req: NextRequest) => {
 
 //This function is used to execute a query
 export const executeQuery = async (query: string) => {
-    const db = new Database(new MySQLDB("localhost:3306"));
+    const db = new Database(new MySQLDB({
+        host: "localhost",
+        user: "root",
+        port: 3306,
+        database: "socket-test",
+      }));
     return await db.execute(query);
 }
 

@@ -15,6 +15,7 @@ interface ConnectionInfo {
   password?: string;
   host?: string;
   database?: string;
+  port?: number;
 }
 
 interface ActionBuilder {
@@ -57,6 +58,9 @@ export class Client {
   }
 
   public async subscribeToNotification(userId: string) {
+    if(this.connectionInfo) {
+      this.initializeNotification();
+    }
     if (!userId) {
       console.log('Error: User ID is required');
       throw new Error('User ID is required');
@@ -90,7 +94,7 @@ export class Client {
       });
   
       this.socket.emit('subscribe:not', { userId, subscription });
-      alert(`User ${userId} subscribed to push notifications`);
+      console.log(`User ${userId} subscribed to push notifications`);
     } catch (error: any) {
       alert(`Subscription failed: ${error.message}`);
       throw error;
@@ -98,6 +102,9 @@ export class Client {
   }
 
   public async unsubscribeFromNotification(userId: string): Promise<void> {
+    if(this.connectionInfo) {
+      this.initializeNotification();
+    }
     if (!userId) throw new Error('User ID is required');
 
     const registration = await navigator.serviceWorker.ready;
@@ -111,6 +118,9 @@ export class Client {
   }
 
   public sendNotification(userId: string, notificationBody: { title: string; message: string }): void {
+    if(this.connectionInfo) {
+      this.initializeNotification();
+    }
     if (!notificationBody || typeof notificationBody !== 'object') {
       throw new Error('Notification body must be a valid object');
     }
@@ -132,6 +142,16 @@ export class Client {
       throw new Error("Database type and connection info must be provided.");
     }
     this.socket.emit("initialize", {
+      dbType: this.dbType,
+      connectionInfo: this.connectionInfo,
+    });
+  }
+
+  private initializeNotification() {
+    if (!this.dbType || !this.connectionInfo) {
+      throw new Error("Database type and connection info must be provided.");
+    }
+    this.socket.emit("initializeNotification", {
       dbType: this.dbType,
       connectionInfo: this.connectionInfo,
     });
@@ -229,27 +249,28 @@ export class Client {
                       setState((prev) => [...prev, newItem]);
                     }
                     break;
-                  case "delete":
-                    if (res.deletedCount > 0) {
-                      const idMatch = res.id;
-                      console.log("Deleting item with ID:", idMatch);
-                      if (idMatch) {
-                        setState((prev) => {
-                          const newState = prev.filter(
-                            (item) => item._id !== idMatch
-                          );
-                          console.log("New state after delete:", newState);
-                          return newState;
-                        });
+                    case "delete":
+                      if (res.deletedCount > 0 || res.affectedRows > 0) {
+                        const idMatch = res.id;
+                        console.log("Deleting item with ID:", idMatch);
+                        if (idMatch) {
+                          setState((prev) => {
+                            const newState = prev.filter(
+                              (item) => item._id !== idMatch && item.id != idMatch
+                            );
+                            console.log(prev.filter((item) => item._id !== idMatch && item.id != idMatch));
+                            console.log("New state after delete:", newState);
+                            return newState;
+                          });
+                        }
                       }
-                    }
-                    break;
+                      break;
                   case "update":
                     if (res.updatedId && res.updatedDoc) {
                       console.log("Updating item with ID:", res.updatedId);
                       setState((prev) => {
                         const newState = prev.map((item) =>
-                          item._id === res.updatedId
+                          item._id === res.updatedId || item.id == res.updatedId
                             ? { ...item, ...res.updatedDoc }
                             : item
                         );
@@ -511,6 +532,200 @@ export class Client {
         return this;
       },
     };
+  }
+
+  // BUCKET API
+  public async createBucket(): Promise<string> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+
+    return new Promise((resolve, reject) => {
+      this.socket.emit('createBucket');
+
+      this.socket.once('bucketCreated', ({ bucketId }: { bucketId: string }) => {
+        console.log(`Bucket created: ${bucketId}`);
+        resolve(bucketId);
+      });
+
+      this.socket.once('error', ({ message }: { message: string }) => {
+        console.log(`Error creating bucket: ${message}`);
+        reject(new Error(message));
+      });
+    });
+  }
+
+  // Upload a file to a bucket
+  public async uploadFile(bucketId: string, file: { name: string; type: string; data: ArrayBuffer }): Promise<string> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    
+    if (!bucketId || !file || !file.name || !file.type || !file.data) {
+      console.log('Uploading file to bucket:', bucketId, file);
+      console.log('Error: Bucket ID and file details (name, type, data) are required');
+      throw new Error('Bucket ID and file details are required');
+    }
+
+    return new Promise((resolve, reject) => {
+      this.socket.emit('uploadFile', { bucketId, file });
+
+      this.socket.once('fileUploaded', ({ bucketId: returnedBucketId, fileId }: { bucketId: string; fileId: string }) => {
+        console.log(`File uploaded to ${returnedBucketId}: ${fileId}`);
+        resolve(fileId);
+      });
+
+      this.socket.once('error', ({ message }: { message: string }) => {
+        console.log(`Error uploading file: ${message}`);
+        reject(new Error(message));
+      });
+    });
+  }
+
+  // Retrieve a file from a bucket
+  public async getFile(bucketId: string, fileId: string): Promise<{ fileName: string; fileType: string; fileData: ArrayBuffer }> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    if (!bucketId || !fileId) {
+      console.log('Error: Bucket ID and file ID are required');
+      throw new Error('Bucket ID and file ID are required');
+    }
+
+    return new Promise((resolve, reject) => {
+      this.socket.emit('getFile', { bucketId, fileId });
+
+      this.socket.once('fileRetrieved', (file: { fileName: string; fileType: string; fileData: ArrayBuffer }) => {
+        console.log(`File retrieved from ${bucketId}: ${file.fileName}`);
+        resolve(file);
+      });
+
+      this.socket.once('error', ({ message }: { message: string }) => {
+        console.log(`Error retrieving file: ${message}`);
+        reject(new Error(message));
+      });
+    });
+  }
+
+  // List all files in a bucket
+  public async listFiles(bucketId: string): Promise<{ id: string; fileName: string; fileType: string; createdAt: string; updatedAt: string }[]> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    if (!bucketId) {
+      console.log('Error: Bucket ID is required');
+      throw new Error('Bucket ID is required');
+    }
+
+    return new Promise((resolve, reject) => {
+      this.socket.emit('listFiles', { bucketId });
+
+      this.socket.once('filesListed', ({ bucketId: returnedBucketId, files }: { bucketId: string; files: any[] }) => {
+        console.log(`Listed ${files.length} files in ${returnedBucketId}`);
+        resolve(files);
+      });
+
+      this.socket.once('error', ({ message }: { message: string }) => {
+        console.log(`Error listing files: ${message}`);
+        reject(new Error(message));
+      });
+    });
+  }
+  
+  // Delete a file from a bucket
+  public async deleteFile(bucketId: string, fileId: string): Promise<void> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    if (!bucketId || !fileId) {
+      console.log('Error: Bucket ID and file ID are required');
+      throw new Error('Bucket ID and file ID are required');
+    }
+
+    return new Promise((resolve, reject) => {
+      this.socket.emit('deleteFile', { bucketId, fileId });
+
+      this.socket.once('fileDeleted', ({ bucketId: returnedBucketId, fileId: deletedFileId }: { bucketId: string; fileId: string }) => {
+        console.log(`File ${deletedFileId} deleted from ${returnedBucketId}`);
+        resolve();
+      });
+
+      this.socket.once('error', ({ message }: { message: string }) => {
+        console.log(`Error deleting file: ${message}`);
+        reject(new Error(message));
+      });
+    });
+  }
+
+  // List all buckets
+  public async listBuckets(): Promise<string[]> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+
+    return new Promise((resolve, reject) => {
+      this.socket.emit("listBuckets");
+
+      this.socket.once("bucketsListed", ({ buckets }: { buckets: string[] }) => {
+        console.log(`Listed ${buckets.length} buckets`);
+        resolve(buckets);
+      });
+
+      this.socket.once("error", ({ message }: { message: string }) => {
+        console.log(`Error listing buckets: ${message}`);
+        reject(new Error(message));
+      });
+    });
+  }
+
+  // Delete a bucket
+  public async deleteBucket(bucketId: string): Promise<void> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    if (!bucketId) {
+      console.log("Error: Bucket ID is required");
+      throw new Error("Bucket ID is required");
+    }
+
+    return new Promise((resolve, reject) => {
+      this.socket.emit("deleteBucket", { bucketId });
+
+      this.socket.once("bucketDeleted", ({ bucketId: deletedBucketId }: { bucketId: string }) => {
+        console.log(`Bucket ${deletedBucketId} deleted`);
+        resolve();
+      });
+
+      this.socket.once("error", ({ message }: { message: string }) => {
+        console.log(`Error deleting bucket: ${message}`);
+        reject(new Error(message));
+      });
+    });
+  }
+
+  // Rename a bucket
+  public async renameBucket(oldBucketId: string, newBucketId: string): Promise<void> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    if (!oldBucketId || !newBucketId) {
+      console.log("Error: Old and new bucket IDs are required");
+      throw new Error("Old and new bucket IDs are required");
+    }
+
+    return new Promise((resolve, reject) => {
+      this.socket.emit("renameBucket", { oldBucketId, newBucketId });
+
+      this.socket.once("bucketRenamed", ({ oldBucketId: oldId, newBucketId: newId }: { oldBucketId: string; newBucketId: string }) => {
+        console.log(`Bucket renamed from ${oldId} to ${newId}`);
+        resolve();
+      });
+
+      this.socket.once("error", ({ message }: { message: string }) => {
+        console.log(`Error renaming bucket: ${message}`);
+        reject(new Error(message));
+      });
+    });
   }
 
   public close(): void {

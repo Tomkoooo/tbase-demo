@@ -28,10 +28,6 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
          <div className="min-h-screen bg-gray-100 p-6 felx w-full justify-center items-center">
-          <div className="w-full flex justify-center items-center flex-col mb-8">
-            <h1 className="text-4xl font-bold text-center text-gray-800 ">TSocket Demo</h1>
-            <span className="text-gray-800 italic">(hover for tooltip)</span>
-          </div>
         {children}
       </div>
 

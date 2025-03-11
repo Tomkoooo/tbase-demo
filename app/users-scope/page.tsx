@@ -1,6 +1,6 @@
 "use client"
 import React, {useState, useEffect} from 'react'
-import { mongoClient } from '@/utils/bundlers'
+import { mysqlClient } from '@/utils/bundlers'
 import Link from 'next/link';
 
 const Page = () => {
@@ -9,7 +9,7 @@ const Page = () => {
 
 
     const handleGetAccount = () => {
-        mongoClient.account().get((response) => {
+        mysqlClient.account().get((response) => {
           console.log("Account data:", response);
           if (response.status === "success") {
             console.log("Account data:", response.data);
@@ -18,25 +18,27 @@ const Page = () => {
       };
 
     useEffect(() => {
-        mongoClient.users().listenOnlineUsers((data) => {
+        mysqlClient.users().listenOnlineUsers((data) => {
           setRealTimeOnlineUsers(data);
       });
         return () => {
-          mongoClient.unsubscribe("users");
+          mysqlClient.unsubscribe("users");
         }
-      }, [mongoClient]);
+      }, [mysqlClient]);
   return (
     <div className="bg-white shadow-lg rounded-lg p-6">
     <h2 className="text-2xl font-semibold text-indigo-600 mb-4">Online Users (Real-time)</h2>
     <p className="text-sm text-gray-600">
       Real-time online users list with MongoDB works with the mysqlClient aswell.
       Client side user fetching and listing.
+
+      To authenticate with the button here use the same databse clint in account-scope and users-scope page
     </p>
     <div className="space-y-4">
       {/* Valós idejű online felhasználók */}
       <div className='flex gap-3 w-full items-center text-black'>
         <span>After login</span>
-        <Link href='/account-scope' className='underline text-blue'> here </Link>
+        <Link href='/account-scope' className='underline text-blue'> here (account-scpoe) </Link>
         <button onClick={handleGetAccount} className='rounded-xl bg-green-400 p-4 lex items-center justify-center'>run the frontend auth (account.get or account.getSession).</button>
       </div>
       <div>
@@ -44,8 +46,8 @@ const Page = () => {
         {realTimeOnlineUsers.length > 0 ? (
           <ul className="bg-indigo-100 text-black p-4 rounded-lg mt-2 text-sm overflow-auto max-h-40">
             {realTimeOnlineUsers.map((user) => (
-              <li key={user._id} className="py-1 animate-fade-in">
-                {user.email} (ID: {user._id})
+              <li key={user._id || user.id} className="py-1 animate-fade-in">
+                {user.email} (ID: {user._id || user.id})
               </li>
             ))}
           </ul>
@@ -58,7 +60,7 @@ const Page = () => {
       <div>
         <button
           onClick={() => {
-            mongoClient.users().listAll((data) => {
+            mysqlClient.users().listAll((data) => {
               console.log("All users:", data);
               setAllUsers(data); // Feltételezem, hogy az allUsers állapot már létezik az App.tsx-ben
             });
@@ -72,8 +74,8 @@ const Page = () => {
         {allUsers.length > 0 ? (
           <ul className="bg-gray-100 text-black p-4 rounded-lg mt-2 text-sm overflow-auto max-h-40">
             {allUsers.map((user) => (
-              <li key={user._id} className="py-1">
-                {user.email} (ID: {user._id})
+              <li key={user._id || user.id} className="py-1">
+                {user.email} (ID: {user._id || user.id})
               </li>
             ))}
           </ul>

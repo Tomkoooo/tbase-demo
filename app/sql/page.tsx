@@ -5,11 +5,16 @@ import {mysqlClient} from '@/utils/bundlers'
 const Page = () => {
   const [mysqlChanges, setMysqlChanges] = useState<any[]>([]);
   const [mysqlUsers, setMysqlUsers] = useState<any[]>([]);
+
+  const generateUniqueEmail = () => {
+    return `user-${Math.floor(Math.random() * 100000)}@example.com`
+  }
+
    // MySQL műveletek callback-ekkel
    const handleMysqlInsert = () => {
     mysqlClient
       .add("users")
-      .query(`INSERT INTO users (name, age) VALUES ('Jane Doe', 25)`)
+      .query(`INSERT INTO users (name, verified, email, password) VALUES ('Jane Doe', false, '${generateUniqueEmail()}', 'asd')`)
       .setState(setMysqlUsers)
       .callback((response) => console.log("MySQL Insert response:", response))
       .execute();
@@ -18,7 +23,7 @@ const Page = () => {
   const handleMysqlUpdate = (id: number) => {
     mysqlClient
       .update("users")
-      .query(`UPDATE users SET name = 'Updated Jane', age = 26 WHERE id = ${id}`)
+      .query(`UPDATE users SET name = 'Updated Jane', verified=true WHERE id = ${id}`)
       .setState(setMysqlUsers)
       .callback((response) => console.log("MySQL Update response:", response))
       .execute();
@@ -79,7 +84,7 @@ const Page = () => {
                 <ul className="bg-gray-100 text-black p-4 rounded-lg mt-2 text-sm overflow-auto max-h-40">
                   {mysqlUsers.map((user) => (
                     <li key={user.id} className="flex justify-between items-center py-1">
-                      {user.name} (Age: {user.age})
+                      {user.id} {user.name} (verified?: {user.verified})
                       <div>
                         <button
                           onClick={() => handleMysqlUpdate(user.id)}

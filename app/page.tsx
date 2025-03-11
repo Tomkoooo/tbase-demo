@@ -31,7 +31,7 @@ const App: React.FC = () => {
     },
     {
       title: "Chat Demo",
-      description: "Send and receive messages in real-time across custom channels with one class and 10 lines out of the box.",
+      description: "Send and receive socket messages in real-time across custom channels with one class and 10 lines out of the box.",
       path: "/chat",
       color: "bg-teal-500 hover:bg-teal-600",
     },
@@ -41,17 +41,23 @@ const App: React.FC = () => {
       path: "/notification",
       color: "bg-yellow-500 hover:bg-yellow-600",
     },
+    {
+      title: "Bucket API Demo",
+      description: "Upload and download files to/from the server with a simple API. Manage files with MongoDB or MySQL.",
+      path: "/bucket",
+      color: "bg-red-500 hover:bg-red-600",
+    }
   ];
 
   return (
     <div className="min-h-screen bg-gray-100 p-6 flex flex-col items-center">
       {/* Header */}
       <div className="w-full flex justify-center items-center flex-col mb-12">
-        <h1 className="text-5xl font-bold text-gray-800 mb-4">TSocket Test Platform</h1>
+        <h1 className="text-5xl font-bold text-gray-800 mb-4 text-center">TBase a socket based BaaS</h1>
         <p className="text-xl text-gray-600 text-center max-w-2xl">
-          Welcome to the TSocket Test Platform! Explore real-time database interactions, user authentication, online user tracking, and chat functionality with a single class and without any API route with both using MongoDB and MySQL with Socket.IO integration.
+          Welcome to the TSocket Test Platform! Explore real-time database interactions,costum database queries (with SQL injection protection) on the frontend, user authentication, online user tracking, file managment, push notification manager and chat functionality with a single class and without any API route with both using MongoDB and MySQL with Socket.IO integration.
         </p>
-        <span className="text-gray-500 italic mt-2">Hover over cards for more info</span>
+        <span className="text-gray-500 italic mt-2">Click on cards for more info</span>
       </div>
 
       {/* Demo Cards */}
@@ -72,7 +78,7 @@ const App: React.FC = () => {
 
       {/* Footer */}
       <footer className="mt-12 text-gray-500 text-center">
-        <p>Built with React, TypeScript, and Socket.IO | © 2025 TSocket Test</p>
+        <p>Built with NextJS, TypeScript, and Socket.IO | © 2025 TSocket Test</p>
       </footer>
     </div>
   );

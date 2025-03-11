@@ -19,6 +19,8 @@ class Database {
     return this.type === "mongodb" ? new ObjectId(id) : id;
   }
 
+//---- Account Scope ----
+
   // Regisztráció (signup)
   async signUp(payload) {
     try {
@@ -35,6 +37,9 @@ class Database {
           email,
           password: hashedPassword,
           createdAt: new Date(),
+          teams: [],
+          labels: [],
+          verified: false,
         });
 
         return result.insertedId;
@@ -45,7 +50,7 @@ class Database {
         );
         if (rows.length > 0) throw new Error("User already exists");
         const [result] = await this.db.execute(
-          "INSERT INTO users (email, password, created_at) VALUES (?, ?, NOW())",
+          "INSERT INTO users (email, password) VALUES (?, ?)",
           [email, hashedPassword]
         );
         return result.insertId.toString();
@@ -64,18 +69,18 @@ class Database {
         if (!user || !bcrypt.compare(password, user.password)) {
           throw new Error("Invalid credentials");
         }
-        console.log("User signed in:", user);
-        return { _id: user._id.toString(), email: user.email };
+        const csrUser = {_id: user._id, ...user}
+        return { user: csrUser };
       } else if (this.type === "mysql") {
         const [rows] = await this.db.execute(
           "SELECT * FROM users WHERE email = ?",
           [email]
         );
         const user = rows[0];
-        if (!user || !bcrypt.compareSync(password, user.password)) {
+        if (!user || !bcrypt.compare(password, user.password)) {
           throw new Error("Invalid credentials");
         }
-        return { _id: user.id.toString(), email: user.email };
+        return { user};
       }
     } catch (err) {
       throw new Error(err.message || "Error during signin");
@@ -94,13 +99,11 @@ class Database {
           );
         if (!user) throw new Error("User not found");
         return {
-          _id: user._id.toString(),
-          email: user.email,
-          createdAt: user.createdAt,
+          user
         };
       } else if (this.type === "mysql") {
         const [rows] = await this.db.execute(
-          "SELECT id AS _id, email, created_at AS createdAt FROM users WHERE id = ?",
+          "SELECT * FROM users WHERE id = ?",
           [userId]
         );
         const user = rows[0];
@@ -138,8 +141,8 @@ class Database {
       } else if (this.type === "mysql" && this.db) {
         if (token) {
           const [rows] = await this.db.execute(
-            "SELECT user_id AS userId, token, data, created_at AS createdAt, updated_at AS updatedAt FROM sessions WHERE user_id = ? AND token = ?",
-            [userId, token]
+            "SELECT * FROM sessions WHERE token = ?",
+            [token]
           );
           if (rows.length === 0) return null;
           const session = rows[0];
@@ -178,7 +181,7 @@ class Database {
         return sessions
       } else if (this.type === "mysql" && this.db) {
         const [rows] = await this.db.execute(
-          "SELECT user_id AS userId, token, data, created_at AS createdAt, updated_at AS updatedAt FROM sessions WHERE user_id = ?",
+          "SELECT * FROM sessions WHERE user_id = ?",
           [userId]
         );
         if (rows.length === 0) throw new Error("Sessions not found");
@@ -201,7 +204,7 @@ class Database {
         });
       } else if (this.type === "mysql" && this.db) {
         await this.db.execute(
-          "INSERT INTO sessions (user_id, token, created_at, updated_at) VALUES (?, ?, NOW(), NOW())",
+          "INSERT INTO sessions (user_id, token) VALUES (?, ?)",
           [userId, token]
         );
       } else {
@@ -261,7 +264,7 @@ class Database {
         if (result.matchedCount === 0) throw new Error("Session not found");
       } else if (this.type === "mysql" && this.db) {
         const [result] = await this.db.execute(
-          "UPDATE sessions SET token = ?, updated_at = NOW() WHERE token = ?",
+          "UPDATE sessions SET token = ?, WHERE token = ?",
           [data, token]
         );
         if (result.affectedRows === 0) throw new Error("Session not found");
@@ -272,6 +275,7 @@ class Database {
       throw new Error(err.message || "Error changing session");
     }
   }
+//---- User Scope ----
 
   //get a specific user
   async getUser(userId) {
@@ -292,40 +296,395 @@ class Database {
     }
   }
  // get multiple usrs
-async getUsers(userIds){
-    try {
-      if (!Array.isArray(userIds) || userIds.length === 0) {
-        throw new Error("userIds must be a non-empty array");
+  async getUsers(userIds){
+      try {
+        if (!Array.isArray(userIds) || userIds.length === 0) {
+          throw new Error("userIds must be a non-empty array");
+        }
+    
+        if (this.type === "mongodb") {
+          const users = await this.db
+            .collection("users")
+            .find({ _id: { $in: userIds.map((id) => this.toObjectId(id)) } })
+            .toArray();
+          if (users.length === 0) throw new Error("Users not found");
+          return users
+        } else if (this.type === "mysql" && this.db) {
+          const placeholders = userIds.map(() => "?").join(", ");
+          const query = `SELECT id AS _id, email, created_at AS createdAt FROM users WHERE id IN (${placeholders})`;
+          const [rows] = await this.db.execute(query, userIds);
+          if (rows.length === 0) throw new Error("Users not found");
+          return rows;
+        }
+        throw new Error("Database not initialized");
+      } catch (err) {
+        console.error("Error in getUsers:", err);
+        throw new Error(err instanceof Error ? err.message : "Error retrieving users");
       }
+    } 
   
+  async listUsers() {
+    try {
       if (this.type === "mongodb") {
-        const users = await this.db
-          .collection("users")
-          .find({ _id: { $in: userIds.map((id) => this.toObjectId(id)) } })
-          .toArray();
-        if (users.length === 0) throw new Error("Users not found");
-        return users
-      } else if (this.type === "mysql" && this.db) {
-        const placeholders = userIds.map(() => "?").join(", ");
-        const query = `SELECT id AS _id, email, created_at AS createdAt FROM users WHERE id IN (${placeholders})`;
-        const [rows] = await this.db.execute(query, userIds);
-        if (rows.length === 0) throw new Error("Users not found");
+        const users = await this.db.collection("users").find({}).toArray();
+        return users;
+      } else if (this.type === "mysql") {
+        const [rows] = await this.db.execute("SELECT * FROM users");
+        console.log("Rows:", rows);
         return rows;
       }
-      throw new Error("Database not initialized");
     } catch (err) {
-      console.error("Error in getUsers:", err);
-      throw new Error(err instanceof Error ? err.message : "Error retrieving users");
+      throw new Error(err.message || "Error listing users");
     }
-  } 
+  }
 
+//---- Notification ----
+
+  // Store a new subscription
+  async storeSubscription(userId, subscription) {
+    if (this.type === 'mongodb') {
+      const subscriptionDoc = {
+        userId,
+        subscription,
+        createdAt: new Date(),
+      };
+      const result = await this.db.collection('push_subscriptions').insertOne(subscriptionDoc);
+      console.log(`Stored subscription for ${userId} in MongoDB`);
+      return result.insertedId;
+    } else if (this.type === 'mysql') {
+      const subscriptionStr = JSON.stringify(subscription);
+      const [result] = await this.db.execute(
+        'INSERT INTO push_subscriptions (user_id, subscription, created_at) VALUES (?, ?, NOW())',
+        [userId, subscriptionStr]
+      );
+      console.log(`Stored subscription for ${userId} in MySQL`);
+      return result.insertId;
+    } else {
+      throw new Error(`Unsupported DB type: ${this.type}`);
+    }
+  }
+
+  // Upsert a record (update or insert)
+  async upsert(table, data) {
+    if (this.type === 'mongodb') {
+      const result = await this.db.collection(table).updateOne(
+        { userId: data.userId },
+        { $set: { subscription: data.subscription, updatedAt: new Date() } },
+        { upsert: true }
+      );
+      console.log(`Upserted into ${table} in MongoDB:`, data);
+      return result;
+    } else if (this.type === 'mysql') {
+      const subscriptionStr = JSON.stringify(data.subscription);
+      const [result] = await this.db.execute(
+        `INSERT INTO ${table} (user_id, subscription, created_at) 
+         VALUES (?, ?, NOW()) 
+         ON DUPLICATE KEY UPDATE subscription = ?, updated_at = NOW()`,
+        [data.userId, subscriptionStr, subscriptionStr]
+      );
+      console.log(`Upserted into ${table} in MySQL:`, data);
+      return result;
+    } else {
+      throw new Error(`Unsupported DB type: ${this.type}`);
+    }
+  }
+
+  // Delete a record
+  async delete(table, query) {
+    if (this.type === 'mongodb') {
+      const result = await this.db.collection(table).deleteOne({
+        userId: query.userId,
+        subscription: query.subscription,
+      });
+      console.log(`Deleted from ${table} in MongoDB:`, query);
+      return { deletedCount: result.deletedCount };
+    } else if (this.type === 'mysql') {
+      const subscriptionStr = JSON.stringify(query.subscription);
+      const [result] = await this.db.execute(
+        `DELETE FROM ${table} WHERE user_id = ? AND subscription = ?`,
+        [query.userId, subscriptionStr]
+      );
+      console.log(`Deleted from ${table} in MySQL:`, query);
+      return { affectedRows: result.affectedRows };
+    } else {
+      throw new Error(`Unsupported DB type: ${this.type}`);
+    }
+  }
+
+  // Find records
+  async find(table, query) {
+    if (this.type === 'mongodb') {
+      const results = await this.db.collection(table).find(query).toArray();
+      console.log(`Found in ${table} in MongoDB:`, results);
+      return results;
+    } else if (this.type === 'mysql') {
+      let sql = `SELECT * FROM ${table}`;
+      let params = [];
+      if (Object.keys(query).length > 0) {
+        sql += ' WHERE user_id = ?';
+        params.push(query.userId);
+      }
+      const [rows] = await this.db.execute(sql, params);
+      const parsedRows = rows.map(row => ({
+        userId: row.user_id,
+        subscription: JSON.parse(row.subscription),
+        createdAt: row.created_at,
+      }));
+      console.log(`Found in ${table} in MySQL:`, parsedRows);
+      return parsedRows;
+    } else {
+      throw new Error(`Unsupported DB type: ${this.type}`);
+    }
+  }
+
+// ------ Bucket API ------
+
+  // Create a new bucket
+  async createBucket() {
+    try {
+      let bucketId = Math.random().toString(36).substring(2, 15);
+      if (this.type === "mongodb") {
+        this.db.createCollection(`bucket_${bucketId}`);
+        console.log(`Created MongoDB bucket: bucket_${bucketId}`);
+        return `bucket_${bucketId}`;
+      } else if (this.type === "mysql") {
+        let [rows] = await this.db.execute(`SHOW TABLES LIKE 'bucket_${bucketId}'`);
+        while (rows.length > 0) {
+          bucketId = Math.random().toString(36).substring(2, 15);
+          [rows] = await this.db.execute(`SHOW TABLES LIKE 'bucket_${bucketId}'`);
+        }
+        await this.db.execute(`
+          CREATE TABLE bucket_${bucketId} (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            file_name VARCHAR(255) NOT NULL,
+            file_type VARCHAR(255) NOT NULL,
+            file_data LONGBLOB NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+          )
+        `);
+        console.log(`Created MySQL bucket: bucket_${bucketId}`);
+        return `bucket_${bucketId}`;
+      } else {
+        throw new Error("Unsupported database type");
+      }
+    } catch (err) {
+      throw new Error(err.message || "Error creating bucket");
+    }
+  }
+
+  // Upload a file to a bucket
+  async uploadFile(bucketId, file) {
+    try {
+      const { name: fileName, type: fileType, data: fileData } = file; // Expecting { name, type, data } structure
+      if (!fileName || !fileType || !fileData) {
+        throw new Error("File name, type, and data are required");
+      }
+
+      if (this.type === "mongodb") {
+        const result = await this.db.collection(bucketId).insertOne({
+          file_name: fileName,
+          file_type: fileType,
+          file_data: Buffer.from(fileData), // Convert to Buffer for MongoDB
+          created_at: new Date(),
+          updated_at: new Date(),
+        });
+        console.log(`Uploaded file ${fileName} to ${bucketId} in MongoDB`);
+        return result.insertedId;
+      } else if (this.type === "mysql") {
+        const [result] = await this.db.execute(`
+          INSERT INTO ${bucketId} (file_name, file_type, file_data)
+          VALUES (?, ?, ?)
+        `, [fileName, fileType, fileData]); // fileData should be a Buffer or binary string
+        console.log(`Uploaded file ${fileName} to ${bucketId} in MySQL`);
+        return result.insertId;
+      } else {
+        throw new Error("Unsupported database type");
+      }
+    } catch (err) {
+      throw new Error(err.message || "Error uploading file to bucket");
+    }
+  }
+
+  // Retrieve a file from a bucket by ID
+  async getFile(bucketId, fileId) {
+    try {
+      if (this.type === "mongodb") {
+        const file = await this.db.collection(bucketId).findOne({ _id: this.toObjectId(fileId) });
+        if (!file) throw new Error("File not found");
+        console.log(`Retrieved file ${file.file_name} from ${bucketId} in MongoDB`);
+        return {
+          fileName: file.file_name,
+          fileType: file.file_type,
+          fileData: file.file_data.buffer, // Return Buffer as-is
+        };
+      } else if (this.type === "mysql") {
+        const [rows] = await this.db.execute(`
+          SELECT file_name, file_type, file_data
+          FROM ${bucketId}
+          WHERE id = ?
+        `, [fileId]);
+        if (rows.length === 0) throw new Error("File not found");
+        const file = rows[0];
+        console.log(`Retrieved file ${file.file_name} from ${bucketId} in MySQL`);
+        return {
+          fileName: file.file_name,
+          fileType: file.file_type,
+          fileData: file.file_data, // LONGBLOB as Buffer
+        };
+      } else {
+        throw new Error("Unsupported database type");
+      }
+    } catch (err) {
+      throw new Error(err.message || "Error retrieving file from bucket");
+    }
+  }
+
+  // List all files in a bucket
+  async listFiles(bucketId) {
+    try {
+      if (this.type === "mongodb") {
+        const files = await this.db.collection(bucketId).find().toArray();
+        console.log(`Listed ${files.length} files in ${bucketId} in MongoDB`);
+        return files.map(file => ({
+          id: file._id,
+          fileName: file.file_name,
+          fileType: file.file_type,
+          createdAt: file.created_at,
+          updatedAt: file.updated_at,
+        }));
+      } else if (this.type === "mysql") {
+        const [rows] = await this.db.execute(`
+          SELECT id, file_name, file_type, created_at, updated_at
+          FROM ${bucketId}
+        `);
+        console.log(`Listed ${rows.length} files in ${bucketId} in MySQL`);
+        return rows.map(row => ({
+          id: row.id,
+          fileName: row.file_name,
+          fileType: row.file_type,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }));
+      } else {
+        throw new Error("Unsupported database type");
+      }
+    } catch (err) {
+      throw new Error(err.message || "Error listing files in bucket");
+    }
+  }
+
+  // Delete a file from a bucket
+  async deleteFile(bucketId, fileId) {
+    try {
+      if (this.type === "mongodb") {
+        const result = await this.db.collection(bucketId).deleteOne({ _id: this.toObjectId(fileId) });
+        if (result.deletedCount === 0) throw new Error("File not found");
+        console.log(`Deleted file ${fileId} from ${bucketId} in MongoDB`);
+        return true;
+      } else if (this.type === "mysql") {
+        const [result] = await this.db.execute(`
+          DELETE FROM ${bucketId}
+          WHERE id = ?
+        `, [fileId]);
+        if (result.affectedRows === 0) throw new Error("File not found");
+        console.log(`Deleted file ${fileId} from ${bucketId} in MySQL`);
+        return true;
+      } else {
+        throw new Error("Unsupported database type");
+      }
+    } catch (err) {
+      throw new Error(err.message || "Error deleting file from bucket");
+    }
+  }
+
+  async listBuckets() {
+    try {
+      if (this.type === "mongodb") {
+        const collections = await this.db.listCollections().toArray();
+        const buckets = collections
+          .filter((col) => col.name.startsWith("bucket_"))
+          .map((col) => col.name);
+        console.log(`Listed ${buckets.length} buckets in MongoDB`);
+        return buckets;
+      } else if (this.type === "mysql") {
+        const [rows] = await this.db.execute(`SHOW TABLES`);
+        const buckets = rows
+          .map((row) => Object.values(row)[0])
+          .filter((tableName) => tableName.startsWith("bucket_"));
+        console.log(`Listed ${buckets.length} buckets in MySQL`);
+        return buckets;
+      } else {
+        throw new Error("Unsupported database type");
+      }
+    } catch (err) {
+      throw new Error(err.message || "Error listing buckets");
+    }
+  }
+
+  async deleteBucket(bucketId) {
+    try {
+      if (!bucketId.startsWith("bucket_")) {
+        throw new Error("Invalid bucket ID: must start with 'bucket_'");
+      }
+      if (this.type === "mongodb") {
+        await this.db.collection(bucketId).drop();
+        console.log(`Deleted bucket ${bucketId} in MongoDB`);
+        return true;
+      } else if (this.type === "mysql") {
+        await this.db.execute(`DROP TABLE ${bucketId}`);
+        console.log(`Deleted bucket ${bucketId} in MySQL`);
+        return true;
+      } else {
+        throw new Error("Unsupported database type");
+      }
+    } catch (err) {
+      throw new Error(err.message || "Error deleting bucket");
+    }
+  }
+
+  async renameBucket(oldBucketId, newBucketId) {
+    try {
+      if (!oldBucketId.startsWith("bucket_") || !newBucketId.startsWith("bucket_")) {
+        throw new Error("Invalid bucket ID: must start with 'bucket_'");
+      }
+      if (oldBucketId === newBucketId) {
+        throw new Error("New bucket ID must be different from the old one");
+      }
+
+      if (this.type === "mongodb") {
+        await this.db.collection(oldBucketId).rename(newBucketId);
+        console.log(`Renamed bucket ${oldBucketId} to ${newBucketId} in MongoDB`);
+        return true;
+      } else if (this.type === "mysql") {
+        const [existing] = await this.db.execute(`SHOW TABLES LIKE '${newBucketId}'`);
+        if (existing.length > 0) {
+          throw new Error(`Bucket ${newBucketId} already exists`);
+        }
+
+        await this.db.execute(`
+          CREATE TABLE ${newBucketId} LIKE ${oldBucketId}
+        `);
+        await this.db.execute(`
+          INSERT INTO ${newBucketId} SELECT * FROM ${oldBucketId}
+        `);
+        await this.db.execute(`DROP TABLE ${oldBucketId}`);
+        console.log(`Renamed bucket ${oldBucketId} to ${newBucketId} in MySQL`);
+        return true;
+      } else {
+        throw new Error("Unsupported database type");
+      }
+    } catch (err) {
+      throw new Error(err.message || "Error renaming bucket");
+    }
+  }
 
   // execute metódus a meglévő lekérdezésekhez (opcionális)
   async execute(query) {
     if (this.type === "mongodb") {
       return eval(`(async () => { return await this.db.${query}; })()`);
     } else if (this.type === "mysql") {
-      const [rows] = await this.db.execute(query);
+      const [rows] = await this.db.query(query);
       return { result: rows };
     }
   }
@@ -398,16 +757,56 @@ class MySQLDB extends Database {
   async connect(connectionInfo) {
     this.db = await mysql.createConnection({
       host: connectionInfo.host || "localhost",
-      user: "root",
-      password: "password",
-      database: "mydb",
+      user: connectionInfo.user,
+      port: connectionInfo.port || 3306,
+      password: connectionInfo.password || "",
+      database: connectionInfo.database,
     });
+    this.db.connect(err => {
+      if (err) {
+          console.log('Database connection error:', err);
+          process.exit(1);
+      }
+      console.log('Connected to the database');
+  });
+  
     console.log("Connected to MySQL");
     //create sessions and users table if not exist
-    await this.db.execute(
-      "CREATE TABLE IF NOT EXISTS sessions (id INT AUTO_INCREMENT PRIMARY KEY, user_id INT, token TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
-    );
-  }
+    await this.db.execute(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        name VARCHAR(255) DEFAULT '',
+        password VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        labels JSON DEFAULT '[]',
+        teams JSON DEFAULT '[]',
+        verified BOOLEAN DEFAULT FALSE
+      )
+    `);
+    await this.db.execute(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        token VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    await this.db.execute(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      subscription JSON NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+      }
+
 
   async watchChanges(tableName, callback, options = {}) {
     const { pollInterval = 1000 } = options;

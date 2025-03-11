@@ -5,7 +5,7 @@ import { promisify } from 'util';
 const execPromise = promisify(exec);
 
 class Notification {
-  constructor() {
+  constructor(db = null) {
     this.subscriptions = new Map(); // Map: userId -> { count: number, subscriptions: Set }
     this.vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC;
     this.vapidPrivateKey = process.env.NEXT_PUBLIC_VAPID_PRIVATE;
@@ -14,16 +14,17 @@ class Notification {
     console.log('Backend VAPID Private Key:', this.vapidPrivateKey);
     console.log('VAPID Email:', this.vapidEmail);
 
-    // APNs konfiguráció
-    this.apnsTeamId = process.env.NEXT_PUBLIC_APNS_TEAM_ID; // Pl. "YOUR_TEAM_ID"
-    this.apnsKeyId = process.env.NEXT_PUBLIC_APNS_KEY_ID;   // Pl. "YOUR_KEY_ID"
+    // APNs configuration
+    this.apnsTeamId = process.env.NEXT_PUBLIC_APNS_TEAM_ID;
+    this.apnsKeyId = process.env.NEXT_PUBLIC_APNS_KEY_ID;
     const apnsKeyFile = process.env.NEXT_PUBLIC_APNS_KEY_FILE || "";
     if (fs.existsSync(apnsKeyFile)) {
-        this.apnsKey = fs.readFileSync(apnsKeyFile, 'utf8');
+      this.apnsKey = fs.readFileSync(apnsKeyFile, 'utf8');
     } else {
-        this.apnsKey = ""; // Set a default value or handle the case when the file doesn't exist
+      this.apnsKey = "";
+      console.warn('APNs key file not found at:', apnsKeyFile);
     }
-    this.apnsBundleId = process.env.NEXT_PUBLIC_APNS_BUNDLE_ID; // Pl. "com.your.app"
+    this.apnsBundleId = process.env.NEXT_PUBLIC_APNS_BUNDLE_ID;
     console.log('APNs Team ID:', this.apnsTeamId);
     console.log('APNs Key ID:', this.apnsKeyId);
     console.log('APNs Bundle ID:', this.apnsBundleId);
@@ -32,20 +33,59 @@ class Notification {
       throw new Error('VAPID keys and email are required');
     }
     if (!this.apnsTeamId || !this.apnsKeyId || !this.apnsKey || !this.apnsBundleId) {
-      console.warn('APNs configuration is missing');
+      console.warn('APNs configuration is incomplete');
     }
 
-    // Mock database
-    this.db = {
-      upsert: async (table, data) => console.log(`Upsert ${table}:`, data),
-      delete: async (table, query) => console.log(`Delete ${table}:`, query),
-      find: async (table, query) => [],
+    // Use provided db or fallback with custom logic
+    this.db = db || {
+      storeSubscription: async (userId, subscription) => {
+        console.log(`Mock storeSubscription - User: ${userId}, Subscription:`, subscription);
+        const subscriptionStr = JSON.stringify(subscription);
+        console.log(`Stored subscription for ${userId} in mock DB:`, { userId, subscription: subscriptionStr, createdAt: new Date() });
+      },
+      upsert: async (table, data) => {
+        console.log(`Mock upsert - Table: ${table}, Data:`, data);
+        // Simulate in-memory storage for consistency
+        const { userId, subscription } = data;
+        if (!this.subscriptions.has(userId)) {
+          this.subscriptions.set(userId, { count: 0, subscriptions: new Set() });
+        }
+        const userData = this.subscriptions.get(userId);
+        const subscriptionStr = JSON.stringify(subscription);
+        if (!userData.subscriptions.has(subscriptionStr)) {
+          userData.count += 1;
+          userData.subscriptions.add(subscriptionStr);
+        }
+      },
+      delete: async (table, query) => {
+        console.log(`Mock delete - Table: ${table}, Query:`, query);
+        // Simulate in-memory deletion
+        const { userId, subscription } = query;
+        if (this.subscriptions.has(userId)) {
+          const userData = this.subscriptions.get(userId);
+          const subscriptionStr = JSON.stringify(subscription);
+          if (userData.subscriptions.has(subscriptionStr)) {
+            userData.subscriptions.delete(subscriptionStr);
+            userData.count -= 1;
+            if (userData.count === 0) {
+              this.subscriptions.delete(userId);
+            }
+          }
+        }
+      },
+      find: async (table, query) => {
+        console.log(`Mock find - Table: ${table}, Query:`, query);
+        return []; // Empty by default; could return this.subscriptions if pre-populated
+      },
     };
 
+    // Initialize web-push and load subscriptions if a real DB is provided
     this.initWebPush();
+    if (db) {
+      this.loadSubscriptions().catch(err => console.error('Failed to load subscriptions:', err));
+    }
   }
 
-  // Segédfüggvény: APNs JWT token generálása
   generateApnsJwt() {
     const token = jwt.sign(
       { iss: this.apnsTeamId, iat: Math.floor(Date.now() / 1000) },
@@ -55,9 +95,8 @@ class Notification {
     return token;
   }
 
-  // Segédfüggvény: APNs kérés küldése
   async sendApnsRequest(subscription, notification) {
-    const endpoint = subscription.endpoint; // A subscription endpoint-je az APNs URL-t tartalmazza
+    const endpoint = subscription.endpoint;
     const jwtToken = this.generateApnsJwt();
     const payload = JSON.stringify({
       aps: {
@@ -103,7 +142,13 @@ class Notification {
     if (!userData.subscriptions.has(subscriptionStr)) {
       userData.count += 1;
       userData.subscriptions.add(subscriptionStr);
-      await this.db.upsert('push_subscriptions', { userId, subscription });
+
+      // Use storeSubscription if available, otherwise upsert
+      if (typeof this.db.storeSubscription === 'function') {
+        await this.db.storeSubscription(userId, subscription);
+      } else {
+        await this.db.upsert('push_subscriptions', { userId, subscription });
+      }
       console.log(`User ${userId} subscribed. Count: ${userData.count}`);
     }
   }
@@ -116,7 +161,9 @@ class Notification {
     if (userData.subscriptions.has(subscriptionStr)) {
       userData.subscriptions.delete(subscriptionStr);
       userData.count -= 1;
+
       await this.db.delete('push_subscriptions', { userId, subscription });
+
       if (userData.count === 0) {
         this.subscriptions.delete(userId);
         console.log(`User ${userId} fully unsubscribed`);
@@ -131,6 +178,7 @@ class Notification {
       await this.initWebPush();
     }
 
+    console.log('Subscriptions before send:', Array.from(this.subscriptions.entries()));
     const userData = this.subscriptions.get(userId);
     if (!userData || userData.count === 0) {
       console.log(`User ${userId} is not subscribed`);
@@ -139,15 +187,13 @@ class Notification {
 
     for (const subscriptionStr of userData.subscriptions) {
       const subscription = JSON.parse(subscriptionStr);
-      const payload = notification; // Az eredeti notification objektum
+      const payload = notification;
 
       try {
-        // Ellenőrizzük, hogy iOS APNs endpoint-e
         if (subscription.endpoint.includes('apple.com')) {
           await this.sendApnsRequest(subscription, payload);
           console.log(`APNs notification sent to ${userId}`);
         } else {
-          // Más platformokhoz (pl. Android) továbbra is web-push
           await this.webPush.sendNotification(subscription, JSON.stringify(payload));
           console.log(`Web push notification sent to ${userId}`);
         }
@@ -174,7 +220,7 @@ class Notification {
         userData.subscriptions.add(subscriptionStr);
       }
     }
-    console.log('Loaded subscriptions from database');
+    console.log('Loaded subscriptions from database:', Array.from(this.subscriptions.entries()));
   }
 }
 

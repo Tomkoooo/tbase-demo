@@ -5,7 +5,7 @@ export const client = new Client()
 export const mongoClient = new Client()
 .database("mongodb")
 .connection({
-  url: "localhost:27017",
+  url: "mongodb://localhost:27017",
   dbName: "socket-test",
 });
 
@@ -14,6 +14,6 @@ export const mysqlClient = new Client()
 .connection({
   host: "localhost",
   user: "root",
-  password: "",
+  port: 3306,
   database: "socket-test",
 });
