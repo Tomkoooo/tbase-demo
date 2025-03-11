@@ -3,8 +3,11 @@ import { createServer } from "node:http";
 import next from "next";
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
+import cors from "cors";
 
-import { MongoDB, MySQLDB } from "./utils/databaseJS.js";
+import Notification from "./utils/notification.js";
+
+import { MongoDB, MySQLDB } from "./utils/database.js";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "localhost";
@@ -13,10 +16,31 @@ const app = next({ dev, hostname, port });
 const handler = app.getRequestHandler();
 const SECRET_KEY = "your-secret-key";
 
-app.prepare().then(() => {
-  const httpServer = createServer(handler);
-  const io = new Server(httpServer);
+const corsMiddleware = (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*'); // Minden eredet engedélyezése
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
+  // OPTIONS kérés kezelése (preflight)
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+
+  next();
+};
+app.prepare().then(() => {
+  const httpServer = createServer((req, res) => {
+    corsMiddleware(req, res, () => handler(req, res));
+  });;
+  const io = new Server(httpServer, {
+    cors: {
+      origin: '*', // Minden eredet engedélyezése a WebSocket-hez
+      methods: ['GET', 'POST'],
+    },
+  });
+  const notificationHandler = new Notification();
   const channelClients = new Map();
   const clientDatabases = new Map();
   const onlineUsers = new Map();
@@ -273,7 +297,7 @@ app.prepare().then(() => {
                   message: "Invalid or expired token",
                 });
               } else {
-                const sessionData = await db.getSession(decoded.userId, session);
+                const sessionData = await db.getSession(session);
                 socket.emit("account:session", {
                   status: "success",
                   data: sessionData,
@@ -524,6 +548,30 @@ app.prepare().then(() => {
           delete channelClients[channel];
         }
       }
+    });
+
+    socket.on('subscribe:not', async ({ userId, subscription }) => {
+      if (!userId || !subscription) {
+        socket.emit('subscriptionError', { message: 'User ID and subscription required' });
+        return;
+      }
+      console.log('Subscription request:', userId, subscription);
+      const response = await notificationHandler.subscribe(userId, subscription);
+    });
+  
+    socket.on('unsubscribe:not', ({ userId, subscription }) => {
+      if (!userId || !subscription) {
+        socket.emit('subscriptionError', { message: 'User ID and subscription required' });
+        return;
+      }
+      notificationHandler.unsubscribe(userId, subscription);
+    });
+  
+    socket.on('sendNotification', ({ userId, notification }) => {
+      notificationHandler.send(userId, notification).catch((error) => {
+        console.error('Error sending notification:', error);
+        socket.emit('notificationError', { message: 'Failed to send notification' });
+      });
     });
   });
 

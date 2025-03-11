@@ -1,6 +1,6 @@
 "use client";
 import React, {useState, useEffect} from 'react'
-import { mongoClient } from '@/utils/mongoClient';
+import { mongoClient } from '@/utils/bundlers';
 
 const Page = () => {
   const [mongoUsers, setMongoUsers] = useState<any[]>([]);

@@ -112,11 +112,11 @@ class Database {
     }
   }
 
-  async getSession(userId, token) {
+  async getSession(token) {
     try {
       if (this.type === "mongodb" && this.db) {
         if (token) {
-          const session = await this.db.collection("sessions").findOne({ userId, token });
+          const session = await this.db.collection("sessions").findOne({ token });
           if (!session) return null;
           return {
             userId: session.userId,

@@ -1,6 +1,6 @@
 "use client";
 import React, {useState, useEffect} from 'react'
-import {mysqlClient} from '@/utils/mysqlClient'
+import {mysqlClient} from '@/utils/bundlers'
 
 const Page = () => {
   const [mysqlChanges, setMysqlChanges] = useState<any[]>([]);

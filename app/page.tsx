@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import Link  from "next/link";
+import webPush from "web-push";
 
 const App: React.FC = () => {
   const demoSections = [
@@ -33,6 +34,12 @@ const App: React.FC = () => {
       description: "Send and receive messages in real-time across custom channels with one class and 10 lines out of the box.",
       path: "/chat",
       color: "bg-teal-500 hover:bg-teal-600",
+    },
+    {
+      title: "Notification Demo",
+      description: "Test push notifications: Subscribe, unsubscribe, and send notifications to users with real-time updates.",
+      path: "/notification",
+      color: "bg-yellow-500 hover:bg-yellow-600",
     },
   ];
 

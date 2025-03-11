@@ -1,6 +1,6 @@
 "use client";
 import React, {useState, useEffect} from 'react'
-import { client} from '@/utils/clientBundler'
+import { client} from '@/utils/bundlers'
 const Page = () => {
     const [channel, setChannel] = useState("general"); // Default channel is "general"
     const [messages, setMessages] = useState<string[]>([]);

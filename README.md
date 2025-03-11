@@ -2,7 +2,10 @@ todo
 - severside auth, serverside class - full account-scope and get-user, mailer
 - mailer, mail metódusok: onRegister comfirm, reset password etc for mailer frontend client
 
-feat: Implement server-side auth and session management
+feat: 
+-Implement server-side auth and session management - server side client class
+-push notification - notification class
+-email notification - mailer class
 
 - Finished CSR features: getAccount (JWT-based), getSession (DB fetch)
 - Added session management: cookie (sessionId), localStorage (JWT), multi-device support
