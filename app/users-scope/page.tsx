@@ -1,6 +1,6 @@
 "use client"
 import React, {useState, useEffect} from 'react'
-import { mysqlClient } from '@/utils/bundlers'
+import { mongoClient } from '@/utils/bundlers'
 import Link from 'next/link';
 
 const Page = () => {
@@ -9,7 +9,7 @@ const Page = () => {
 
 
     const handleGetAccount = () => {
-        mysqlClient.account().get((response) => {
+        mongoClient.account().get((response) => {
           console.log("Account data:", response);
           if (response.status === "success") {
             console.log("Account data:", response.data);
@@ -18,18 +18,18 @@ const Page = () => {
       };
 
     useEffect(() => {
-        mysqlClient.users().listenOnlineUsers((data) => {
+        mongoClient.users().listenOnlineUsers((data) => {
           setRealTimeOnlineUsers(data);
       });
         return () => {
-          mysqlClient.unsubscribe("users");
+          mongoClient.unsubscribe("users");
         }
-      }, [mysqlClient]);
+      }, [mongoClient]);
   return (
     <div className="bg-white shadow-lg rounded-lg p-6">
     <h2 className="text-2xl font-semibold text-indigo-600 mb-4">Online Users (Real-time)</h2>
     <p className="text-sm text-gray-600">
-      Real-time online users list with MongoDB works with the mysqlClient aswell.
+      Real-time online users list with MongoDB works with the mongoClient aswell.
       Client side user fetching and listing.
 
       To authenticate with the button here use the same databse clint in account-scope and users-scope page
@@ -60,7 +60,7 @@ const Page = () => {
       <div>
         <button
           onClick={() => {
-            mysqlClient.users().listAll((data) => {
+            mongoClient.users().listAll((data) => {
               console.log("All users:", data);
               setAllUsers(data); // Feltételezem, hogy az allUsers állapot már létezik az App.tsx-ben
             });

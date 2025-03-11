@@ -586,6 +586,7 @@ app.prepare().then(() => {
               socket.emit("users:get-users", { status: "error", message: err.message });
             }
             break;
+          
           default:
             socket.emit("users:result", {
               status: "error",

@@ -57,76 +57,6 @@ export class Client {
     return outputArray;
   }
 
-  public async subscribeToNotification(userId: string) {
-    if(this.connectionInfo) {
-      this.initializeNotification();
-    }
-    if (!userId) {
-      console.log('Error: User ID is required');
-      throw new Error('User ID is required');
-    };
-  
-    // Service Worker ellenőrzése
-    if (!('serviceWorker' in navigator)) {
-      console.log('Error: ServiceWorker is not supported in this environment');
-      throw new Error('ServiceWorker is not supported in this environment');
-    }
-  
-    // További ellenőrzés és logika
-    if (!('PushManager' in window)) {
-      console.log('Error: PushManager is not supported in this environment');
-      throw new Error('PushManager is not supported in this environment');
-    }
-  
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        console.log('Error: Notification permission denied');
-        throw new Error('Notification permission denied');
-      }
-  
-      const registration = await navigator.serviceWorker.register('/service-worker.js');
-      console.log('Service Worker registered successfully');
-  
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: this.urlBase64ToUint8Array(this.publicVapidKey),
-      });
-  
-      this.socket.emit('subscribe:not', { userId, subscription });
-      console.log(`User ${userId} subscribed to push notifications`);
-    } catch (error: any) {
-      alert(`Subscription failed: ${error.message}`);
-      throw error;
-    }
-  }
-
-  public async unsubscribeFromNotification(userId: string): Promise<void> {
-    if(this.connectionInfo) {
-      this.initializeNotification();
-    }
-    if (!userId) throw new Error('User ID is required');
-
-    const registration = await navigator.serviceWorker.ready;
-    const subscription = await registration.pushManager.getSubscription();
-
-    if (subscription) {
-      await subscription.unsubscribe();
-      this.socket.emit('unsubscribe:not', { userId, subscription });
-      console.log(`User ${userId} unsubscribed from push notifications`);
-    }
-  }
-
-  public sendNotification(userId: string, notificationBody: { title: string; message: string }): void {
-    if(this.connectionInfo) {
-      this.initializeNotification();
-    }
-    if (!notificationBody || typeof notificationBody !== 'object') {
-      throw new Error('Notification body must be a valid object');
-    }
-    this.socket.emit('sendNotification', { userId, notification: notificationBody });
-  }
-
   public database(type: "mongodb" | "mysql"): Client {
     this.dbType = type;
     return this;
@@ -161,6 +91,8 @@ export class Client {
     this.socket.emit("close");
   }
 
+//------ SOCKET SCOPE ------
+
   public subscribe(channel: string, callback: (data: any) => void): Client {
     this.initialize();
     this.socket.emit("subscribe", channel);
@@ -181,10 +113,12 @@ export class Client {
     return this;
   }
 
-  public send(channel: string, message: string): Client {
-    this.socket.emit("message", { channel, message });
+  public send(channel: string, data: any): Client {
+    this.socket.emit("message", { channel, data });
     return this;
   }
+
+//------ DATABASE SCOPE ------
 
   public execute(channel: string, query: string, callback: (data:any) => void): Client {
     this.socket.emit("action", { action: "execute", channel, code: query, method: "" });
@@ -314,6 +248,77 @@ export class Client {
     return this.createActionBuilder(channel, "insert", this);
   }
 
+//------ NOTIFICATIONS SCOPE ------
+  public async subscribeToNotification(userId: string) {
+    if(this.connectionInfo) {
+      this.initializeNotification();
+    }
+    if (!userId) {
+      console.log('Error: User ID is required');
+      throw new Error('User ID is required');
+    };
+  
+    // Service Worker ellenőrzése
+    if (!('serviceWorker' in navigator)) {
+      console.log('Error: ServiceWorker is not supported in this environment');
+      throw new Error('ServiceWorker is not supported in this environment');
+    }
+  
+    // További ellenőrzés és logika
+    if (!('PushManager' in window)) {
+      console.log('Error: PushManager is not supported in this environment');
+      throw new Error('PushManager is not supported in this environment');
+    }
+  
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        console.log('Error: Notification permission denied');
+        throw new Error('Notification permission denied');
+      }
+  
+      const registration = await navigator.serviceWorker.register('/service-worker.js');
+      console.log('Service Worker registered successfully');
+  
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: this.urlBase64ToUint8Array(this.publicVapidKey),
+      });
+  
+      this.socket.emit('subscribe:not', { userId, subscription });
+      console.log(`User ${userId} subscribed to push notifications`);
+    } catch (error: any) {
+      alert(`Subscription failed: ${error.message}`);
+      throw error;
+    }
+  }
+
+  public async unsubscribeFromNotification(userId: string): Promise<void> {
+    if(this.connectionInfo) {
+      this.initializeNotification();
+    }
+    if (!userId) throw new Error('User ID is required');
+
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+
+    if (subscription) {
+      await subscription.unsubscribe();
+      this.socket.emit('unsubscribe:not', { userId, subscription });
+      console.log(`User ${userId} unsubscribed from push notifications`);
+    }
+  }
+
+  public sendNotification(userId: string, notificationBody: { title: string; message: string }): void {
+    if(this.connectionInfo) {
+      this.initializeNotification();
+    }
+    if (!notificationBody || typeof notificationBody !== 'object') {
+      throw new Error('Notification body must be a valid object');
+    }
+    this.socket.emit('sendNotification', { userId, notification: notificationBody });
+  }
+
   // ACCOUNT SCOPE
   public signUp(email: string, password: string, callback: (data: any) => void): Client {
     this.initialize();
@@ -362,7 +367,7 @@ export class Client {
     setSession: (sessionData: string, callback: (data: any) => void) => Client;
     killSession: ( callback: (data: any) => void) => Client;
     killSessions: (callback: (data: any) => void) => Client;
-    changeSession: (newSessionData: any, callback: (data: any) => void) => Client;} {
+    changeSession: (newSessionString: string, callback: (data: any) => void) => Client;} {
     this.initialize();
 
     function getCookie(cname: string) {
@@ -448,9 +453,9 @@ export class Client {
         });
         return this;
       },
-      changeSession: (newSessionData: any, callback: (data: any) => void): Client => {
+      changeSession: (newSessionString: string, callback: (data: any) => void): Client => {
         const session = getCookie("t_auth");
-        this.socket.emit("account:action", { action: "changeSession", session, data: newSessionData });
+        this.socket.emit("account:action", { action: "changeSession", session, data: newSessionString });
         this.socket.on("account:result", (response) => {
           console.log("Change session response:", response);
           callback(response);
@@ -468,7 +473,7 @@ export class Client {
     return this;
   }
 
-  // USERS SCOPE
+//------ USERS SCOPE ------
   public users(): {
     listAll: (callback: (data: any[]) => void) => Client;
     listOnline: (callback: (data: any[]) => void) => Client;
@@ -534,7 +539,7 @@ export class Client {
     };
   }
 
-  // BUCKET API
+//------- BUCKET SCOPE -------
   public async createBucket(): Promise<string> {
     if (this.connectionInfo) {
       this.initialize();

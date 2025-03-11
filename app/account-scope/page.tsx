@@ -1,6 +1,6 @@
 "use client";
 import React, {useState, useEffect} from 'react'
-import { mysqlClient } from '@/utils/bundlers'
+import { mongoClient } from '@/utils/bundlers'
 
 const Page = () => {
     const [email, setEmail] = useState("");
@@ -11,17 +11,17 @@ const Page = () => {
     const [token, setToken] = useState("");
 
     useEffect(() => {
-        mysqlClient.subscribe("account:result", (data) => {
+        mongoClient.subscribe("account:result", (data) => {
           console.log("Account update received:", data);
           setAccountUpdates((prev) => [...prev, data]);
         })
         return () => {
-          mysqlClient.unsubscribe("account");
+          mongoClient.unsubscribe("account");
         }
-      }, [mysqlClient]);
+      }, [mongoClient]);
 
       const handleSignUp = () => {
-        mysqlClient.signUp(email, password, (response) => {
+        mongoClient.signUp(email, password, (response) => {
           console.log("SignUp result:", response);
           if (response.status === "success") {
             setToken(response.token);
@@ -32,7 +32,7 @@ const Page = () => {
       };
     
       const handleSignIn = () => {
-        mysqlClient.signIn(email, password, (response) => {
+        mongoClient.signIn(email, password, (response) => {
           console.log("SignIn result:", response);
           if (response.status === "success") {
             setToken(response.token);
@@ -43,7 +43,7 @@ const Page = () => {
       };
     
       const handleGetAccount = () => {
-        mysqlClient.account().get((response) => {
+        mongoClient.account().get((response) => {
           console.log("Account data:", response);
           if (response.status === "success") {
             setAccountData(response.data);
@@ -52,7 +52,7 @@ const Page = () => {
       };
     
       const handleGetSession = () => {
-        mysqlClient.account().getSession((response) => {
+        mongoClient.account().getSession((response) => {
           console.log("Session data:", response);
           if (response.status === "success") {
             setSessionData(response.data);
@@ -61,7 +61,7 @@ const Page = () => {
       };
     
       const handleSignOut = () => {
-        mysqlClient.account().killSession((response) => {
+        mongoClient.account().killSession((response) => {
           console.log("SignOut result:", response);
           if (response.status === "success") {
             setAccountData(null);
