@@ -33,8 +33,8 @@ export default function Home() {
       setStatus("Error: Please enter a valid bucket ID");
       return;
     }
-    setBucketId(manualBucketId);
-    setStatus(`Bucket set manually: ${manualBucketId}`);
+    setBucketId(`bucket_${manualBucketId}`);
+    setStatus(`Bucket set manually: bucket_${manualBucketId}`);
   };
 
   const handleUploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -142,7 +142,7 @@ export default function Home() {
     if (!mongoClient || !bucketId || !manualBucketId || manualBucketId === bucketId) return;
     try {
       setStatus(`Renaming bucket ${bucketId} to ${manualBucketId}...`);
-      await mongoClient.renameBucket(bucketId, manualBucketId);
+      await mongoClient.renameBucket(bucketId, `bucket_${manualBucketId}`);
       setBucketId(manualBucketId);
       setStatus(`Bucket renamed to ${manualBucketId}`);
     } catch (error: any) {

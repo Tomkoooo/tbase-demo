@@ -122,15 +122,16 @@ Manage user authentication with ease:
  **Sign Up/Sign In:**
 ```javascript
 
-databaseClient.account().signUp('user@example.com', 'password', (data) => console.log(data));
-databaseClient.account().signIn('user@example.com', 'password', (data) => console.log(data));
+databaseClient.signUp('user@example.com', 'password', (data) => console.log(data));
+databaseClient.signIn('user@example.com', 'password', (data) => console.log(data));
+databaseClient.validate('jwt_string' (data) => console.log(data)); //gives back the user by provided jwt
 ```
 Returns a JWT (stored in localStorage) and session ID (stored in cookies) under t_auth.
 
  **Get User:**
 ```javascript
 
-client.account().get((user) => console.log(user));
+databaseClient.account().get((user) => console.log(user));
 ```
 Returns a user object if there is a valid JWT token stored
 
@@ -170,6 +171,7 @@ client.users().listenOnlineUsers((users) => console.log(users));
 ***
 ### 5. File Storage (Bucket API)
 Store and manage files in buckets:
+***JWT session needed***
 
 **Create Bucket:**
 ```javascript

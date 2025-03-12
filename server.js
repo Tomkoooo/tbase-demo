@@ -94,8 +94,10 @@ app.prepare().then(() => {
       let db;
       if (dbType === "mongodb") {
         db = new MongoDB(connectionInfo);
+        socket.emit("initialized", { message: "MongoDB initialized" });
       } else if (dbType === "mysql") {
         db = new MySQLDB(connectionInfo);
+        socket.emit("initialized", { message: "MySQL initialized" });
       } else {
         socket.emit("error", { message: "Unsupported database type" });
         return;
@@ -282,6 +284,84 @@ app.prepare().then(() => {
     
       try {
         switch (action) {
+          case "validate":
+
+            if (!token) throw new Error("No token provided");
+            jwt.verify(token, SECRET_KEY, async (err, decoded) => {
+              if (err) {
+                socket.emit("account:result", {
+                  status: "error",
+                  message: "Invalid or expired token",
+                });
+              } else {
+                const user = await db.getUser(decoded.userId);
+                if (!user) {
+                  socket.emit("account:result", {
+                    status: "error",
+                    message: "User not found",
+                  });
+                } else {
+                  socket.emit("account:result", {
+                    status: "success",
+                    message: "Token is valid",
+                    user
+                  });
+                }
+              }
+            });
+          
+          case  "signupSuper":
+            try {
+              const userId = await db.signUp({ ...payload, isSuper: true });
+              if (!userId) throw new Error("Signup failed");
+              const sessionId = Math.random().toString(16).slice(2);
+              await db.setSession(userId, sessionId);
+              const signupToken = jwt.sign(
+                { userId: userId.toString(), email: payload.email },
+                SECRET_KEY,
+                { expiresIn: "24h" }
+              );
+              socket.emit("account:result", {
+                status: "success",
+                token: signupToken,
+                sessionId,
+              });
+              socket.emit("account", { event: "signup", userId });
+            } catch (err) {
+              socket.emit("account:result", {
+                status: "error",
+                message: err.message,
+              });
+            }
+            break;
+    
+          case "signinSuper":
+              try {
+                const user = await db.signInSuper(payload.email, payload.password, true);
+                if (!user) throw new Error("User not found or invalid password");
+                const sessionId = Math.random().toString(16).slice(2);
+                const userId = user.user._id || user.user.id;
+                console.log("User ID:", userId, user, user._id);
+                await db.setSession(userId, sessionId); // Store session with sessionId
+                const signInToken = jwt.sign(
+                  { userId: userId, email: user.email },
+                  SECRET_KEY,
+                  { expiresIn: "24h" }
+                );
+                socket.emit("account:result", {
+                  status: "success",
+                  token: signInToken,
+                  sessionId, // Return sessionId instead of session object
+                });
+                socket.emit("account", { event: "signin", userId: user._id });
+              } catch (err) {
+                socket.emit("account:result", {
+                  status: "error",
+                  message: err.message,
+                });
+              }
+              break;
+      
           case  "signup":
             try {
               const userId = await db.signUp(payload);
@@ -309,7 +389,7 @@ app.prepare().then(() => {
     
           case "signin":
             try {
-              const user = await db.signIn(payload.email, payload.password);
+              const user = await db.signIn(payload.email, payload.password, false);
               if (!user) throw new Error("User not found or invalid password");
               const sessionId = Math.random().toString(16).slice(2);
               const userId = user.user._id || user.user.id;
@@ -648,134 +728,376 @@ app.prepare().then(() => {
 
 //----- BUCKET API -----
 
-  // Bucket létrehozása
-  socket.on('createBucket', async () => {
+  socket.on('bucket:action', async (data) => {
+    const { action, bucketId, newBucketId, fileId, file, token } = data;
+    if (!token) {
+      socket.emit('error', { message: 'No token provided' });
+      return;
+    }
     const db = clientDatabases.get(socket.id);
     if (!db) {
       socket.emit('error', { message: 'Database not initialized' });
       return;
     }
     try {
-      const bucketId = await db.createBucket();
-      socket.emit('bucketCreated', { bucketId });
-    } catch (err) {
-      console.error('Create bucket error:', err);
-      socket.emit('error', { message: err.message || 'Failed to create bucket' });
+      const decoded = jwt.verify(token, SECRET_KEY);
+      switch (action) {
+        case 'create':
+          const newId = await db.createBucket();
+          socket.emit('bucket:created', { bucketId: newId });
+          break;
+        case 'delete':
+          await db.deleteBucket(bucketId);
+          socket.emit('bucket:deleted', { bucketId });
+          break;
+        case 'rename':
+          console.log('Renaming bucket:', bucketId, newBucketId);
+          await db.renameBucket(bucketId, newBucketId);
+          socket.emit('bucket:renamed', { bucketId, newBucketId });
+          break;
+        case 'bucketList':
+          const buckets = await db.listBuckets();
+          socket.emit('bucket:listed', { buckets });
+          break;
+        case 'upload':
+          const newFileId = await db.uploadFile(bucketId, file);
+          socket.emit('file:uploaded', { bucketId, fileId: newFileId });
+          break;
+        case 'get':
+          const retreivedFile = await db.getFile(bucketId, fileId);
+          socket.emit('file:retrieved', retreivedFile);
+          break;
+        case 'list':
+          const files = await db.listFiles(bucketId);
+          socket.emit('file:listed', { bucketId, files });
+          break;
+        case 'deleteFile':
+          await db.deleteFile(bucketId, fileId);
+          socket.emit('file:delete', { bucketId, fileId });
+          break;
+        default:
+          socket.emit('error', { message: 'Unknown action' });
+      }
+    } catch (error) {
+      console.error(`Bucket action error for ${socket.id}:`, error);
+      socket.emit('error', { message: error.message || 'Bucket action failed' });
     }
-  });
+  })
 
-  // Fájl feltöltése egy bucketbe
-  socket.on('uploadFile', async ({ bucketId, file }) => {
-    const db = clientDatabases.get(socket.id);
-    if (!db) {
-      socket.emit('error', { message: 'Database not initialized' });
-      return;
-    }
-    try {
-      const fileId = await db.uploadFile(bucketId, file);
-      socket.emit('fileUploaded', { bucketId, fileId });
-    } catch (err) {
-      console.error('Upload file error:', err);
-      socket.emit('error', { message: err.message || 'Failed to upload file' });
-    }
-  });
-
-  // Fájl lekérdezése egy bucketből
-  socket.on('getFile', async ({ bucketId, fileId }) => {
-    const db = clientDatabases.get(socket.id);
-    if (!db) {
-      socket.emit('error', { message: 'Database not initialized' });
-      return;
-    }
-    try {
-      const file = await db.getFile(bucketId, fileId);
-      socket.emit('fileRetrieved', file);
-    } catch (err) {
-      console.error('Get file error:', err);
-      socket.emit('error', { message: err.message || 'Failed to retrieve file' });
-    }
-  });
-
-  // Fájlok listázása egy bucketben
-  socket.on('listFiles', async ({ bucketId }) => {
-    const db = clientDatabases.get(socket.id);
-    if (!db) {
-      socket.emit('error', { message: 'Database not initialized' });
-      return;
-    }
-    try {
-      const files = await db.listFiles(bucketId);
-      socket.emit('filesListed', { bucketId, files });
-    } catch (err) {
-      console.error('List files error:', err);
-      socket.emit('error', { message: err.message || 'Failed to list files' });
-    }
-  });
-
-  // Fájl törlése egy bucketből
-  socket.on('deleteFile', async ({ bucketId, fileId }) => {
-    const db = clientDatabases.get(socket.id);
-    if (!db) {
-      socket.emit('error', { message: 'Database not initialized' });
-      return;
-    }
-    try {
-      await db.deleteFile(bucketId, fileId);
-      socket.emit('fileDeleted', { bucketId, fileId });
-    } catch (err) {
-      console.error('Delete file error:', err);
-      socket.emit('error', { message: err.message || 'Failed to delete file' });
-    }
-  });
-
-  // List all buckets
-  socket.on("listBuckets", async () => {
+//----- PERMISSION -----
+  socket.on("permission", async (data) => {
     const db = clientDatabases.get(socket.id);
     if (!db) {
       socket.emit("error", { message: "Database not initialized" });
       return;
     }
-    try {
-      const buckets = await db.listBuckets();
-      socket.emit("bucketsListed", { buckets });
-    } catch (err) {
-      console.error("List buckets error:", err);
-      socket.emit("error", { message: err.message || "Failed to list buckets" });
+    const { action, ...params } = data;
+    switch (action) {
+      case "create":
+        try {
+          const newPermission = await db.createPermission(params.itemId, params.requireAction, params.requireRole);
+          socket.emit("permissionCreated", newPermission);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "get":
+        try {
+          const permission = await db.getPermission(params.permissionId);
+          socket.emit("permission", permission);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "getAll":
+        try {
+          const permissions = await db.getPermissions(params.itemId);
+          socket.emit("permissions", permissions);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "update":
+        try {
+          const result = await db.updatePermission(params.permissionId, params.itemId, params.requireAction, params.requireRole);
+          socket.emit("permissionUpdated", result);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "delete":
+        try {
+          const result = await db.deletePermission(params.permissionId);
+          socket.emit("permissionDeleted", result);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      default:
+        socket.emit("error", { message: "Invalid permission action" });
     }
   });
 
-  // Delete a bucket
-  socket.on("deleteBucket", async ({ bucketId }) => {
+  socket.on("userPermission", async (data) => {
     const db = clientDatabases.get(socket.id);
     if (!db) {
       socket.emit("error", { message: "Database not initialized" });
       return;
     }
-    try {
-      await db.deleteBucket(bucketId);
-      socket.emit("bucketDeleted", { bucketId });
-    } catch (err) {
-      console.error("Delete bucket error:", err);
-      socket.emit("error", { message: err.message || "Failed to delete bucket" });
+    console.log("User permission data:", data);
+    const { action, ...params } = data;
+    switch (action) {
+      case "create":
+        try {
+          const newPermission = await db.createUserPermission(params.userId, params.onDoc, params.permission);
+          socket.emit("userPermissionCreated", newPermission);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "getAll":
+        try {
+          const permissions = await db.getUserPermissions(params.userId, params.onDoc);
+          socket.emit("userPermissions", permissions);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "update":
+        try {
+          const result = await db.updateUserPermission(params.permissionId, params.onDoc, params.permission);
+          socket.emit("userPermissionUpdated", result);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "delete":
+        try {
+          const result = await db.deleteUserPermission(params.permissionId);
+          socket.emit("userPermissionDeleted", result);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "check":
+        try {
+          const hasPermission = await db.checkUserPermission(params.userId, params.onDoc, params.requiredPermission);
+          socket.emit("userPermissionCheck", { hasPermission });
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      default:
+        socket.emit("error", { message: "Invalid user permission action" });
     }
   });
 
-  // Rename a bucket
-  socket.on("renameBucket", async ({ oldBucketId, newBucketId }) => {
+//----- TEAMS -----
+  socket.on("teams", async (data) => {
+    const { action, ...params } = data;
+    if (!params.token) {
+      socket.emit("error", { message: "Authentication token is required" });
+      return;
+    }
     const db = clientDatabases.get(socket.id);
     if (!db) {
       socket.emit("error", { message: "Database not initialized" });
       return;
     }
-    try {
-      await db.renameBucket(oldBucketId, newBucketId);
-      socket.emit("bucketRenamed", { oldBucketId, newBucketId });
-    } catch (err) {
-      console.error("Rename bucket error:", err);
-      socket.emit("error", { message: err.message || "Failed to rename bucket" });
+
+    switch (action) {
+      case "create":
+        try {
+          const { name, styling, creatorId } = params;
+          if (!name || !creatorId) {
+            socket.emit("error", { message: "Name and creatorId are required" });
+            return;
+          }
+          const team = await db.createTeam({ name, styling, creatorId });
+          await db.addTeamUser(team.id, creatorId, "admin", creatorId); // Létrehozó automatikusan admin
+          socket.emit("teamCreated", team);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "get":
+        try {
+          const { teamId } = params;
+          if (!teamId) {
+            socket.emit("error", { message: "Team ID is required" });
+            return;
+          }
+          const team = await db.getTeam(teamId);
+          console.log("Team:", team);
+          socket.emit("team", team);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "getAll":
+        try {
+          const { userId } = params;
+          const teams = await db.getTeams(userId);
+          console.log("Teams:", teams);
+          socket.emit("teams", teams.teams);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "update":
+        try {
+          const { teamId, name, styling, userId } = params;
+          if (!teamId || !userId) {
+            socket.emit("error", { message: "Team ID and userId are required" });
+            return;
+          }
+          const team = await db.getTeam(teamId);
+          if (!["admin", "moderator"].includes((await db.getTeamUserRole(teamId, userId)) || "")) {
+            socket.emit("error", { message: "Only admin or moderator can update team" });
+            return;
+          }
+          const updatedTeam = await db.updateTeam(teamId, name, styling, userId);
+          socket.emit("teamUpdated", updatedTeam);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "delete":
+        try {
+          const { teamId, userId } = params;
+          if (!teamId || !userId) {
+            socket.emit("error", { message: "Team ID and userId are required" });
+            return;
+          }
+          const team = await db.getTeam(teamId);
+          if (!team) {
+            socket.emit("error", { message: "Team not found" });
+            return;
+          }
+          if (!["admin"].includes((await db.getTeamUserRole(teamId, userId)) || "")) {
+            socket.emit("error", { message: "Only admin can delete team" });
+            return;
+          }
+          const result = await db.deleteTeam(teamId, userId);
+          socket.emit("teamDeleted", result);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "addUser":
+        try {
+          const { teamId, userId, role, addedBy } = params;
+          if (!teamId || !userId || !addedBy) {
+            socket.emit("error", { message: "Team ID, userId, and addedBy are required" });
+            return;
+          }
+          const team = await db.getTeam(teamId);
+          if (!team) {
+            socket.emit("error", { message: "Team not found" });
+            return;
+          }
+          if (!["admin", "moderator"].includes((await db.getTeamUserRole(teamId, addedBy)) || "")) {
+            socket.emit("error", { message: "Only admin or moderator can add users" });
+            return;
+          }
+          const result = await db.addTeamUser(teamId, userId, role, addedBy);
+          socket.emit("teamUserAdded", result);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "removeUser":
+        try {
+          const { teamId, userId, removedBy } = params;
+          if (!teamId || !userId || !removedBy) {
+            socket.emit("error", { message: "Team ID, userId, and removedBy are required" });
+            return;
+          }
+          const team = await db.getTeam(teamId);
+          if (!team) {
+            socket.emit("error", { message: "Team not found" });
+            return;
+          }
+          if (!["admin", "moderator"].includes((await db.getTeamUserRole(teamId, removedBy)) || "")) {
+            socket.emit("error", { message: "Only admin or moderator can remove users" });
+            return;
+          }
+          const result = await db.removeTeamUser(teamId, userId, removedBy);
+          socket.emit("teamUserRemoved", result);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "updateUserRole":
+        try {
+          const { teamId, userId, role, updatedBy } = params;
+          if (!teamId || !userId || !updatedBy) {
+            socket.emit("error", { message: "Team ID, userId, and updatedBy are required" });
+            return;
+          }
+          const team = await db.getTeam(teamId);
+          if (!team) {
+            socket.emit("error", { message: "Team not found" });
+            return;
+          }
+          if (!["admin", "moderator"].includes((await db.getTeamUserRole(teamId, updatedBy)) || "")) {
+            socket.emit("error", { message: "Only admin or moderator can update roles" });
+            return;
+          }
+          const result = await db.updateTeamUserRole(teamId, userId, role, updatedBy);
+          socket.emit("teamUserRoleUpdated", result);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "updateUserLabels":
+        try {
+          const { teamId, userId, labels, updatedBy } = params;
+          if (!teamId || !userId || !updatedBy) {
+            socket.emit("error", { message: "Team ID, userId, and updatedBy are required" });
+            return;
+          }
+          const team = await db.getTeam(teamId);
+          if (!team) {
+            socket.emit("error", { message: "Team not found" });
+            return;
+          }
+          const userRole = await db.getTeamUserRole(teamId, updatedBy);
+          if (!["admin", "moderator"].includes(userRole) && userId !== updatedBy) {
+            socket.emit("error", { message: "Only admin, moderator, or self can update labels" });
+            return;
+          }
+          const result = await db.updateTeamUserLabels(teamId, userId, labels, updatedBy);
+          socket.emit("teamUserLabelsUpdated", result);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "leave":
+        try {
+          const { teamId, userId } = params;
+          if (!teamId || !userId) {
+            socket.emit("error", { message: "Team ID and userId are required" });
+            return;
+          }
+          const result = await db.removeTeamUser(teamId, userId, userId); // Self-remove
+          socket.emit("teamUserLeft", result);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      case "listAll":
+        try {
+          const teams = await db.listTeams();
+          socket.emit("teams", teams);
+        } catch (err) {
+          socket.emit("error", { message: err.message });
+        }
+        break;
+      default:
+        socket.emit("error", { message: "Invalid teams action" });
     }
   });
-
 
   });
 

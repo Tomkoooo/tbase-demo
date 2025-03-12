@@ -46,6 +46,18 @@ const App: React.FC = () => {
       description: "Upload and download files to/from the server with a simple API. Manage files with MongoDB or MySQL.",
       path: "/bucket",
       color: "bg-red-500 hover:bg-red-600",
+    },
+    {
+      title: "Permission Managment Demo",
+      description: "Manage user and document|routes permissions: Create, update, delete, and list and check permissions for users.",
+      path: "/permissions",
+      color: "bg-pink-500 hover:bg-pink-600",
+    },
+    {
+      title: "Team Managment Demo",
+      description: "Create and manage teams with customization and user permissions. Manage teams on MongoDB or MySQL.",
+      path: "/teams",
+      color: "bg-gray-500 hover:bg-gray-600",
     }
   ];
 

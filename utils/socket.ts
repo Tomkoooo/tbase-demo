@@ -35,6 +35,8 @@ export class Client {
   private dbType: string | null = null;
   private connectionInfo: ConnectionInfo | null = null;
   public publicVapidKey: string;
+  private isInitialized = false;
+  private initializePromise: Promise<void> | null = null;
 
   constructor(url: string = "https://52ee-2a02-ab88-6787-1c80-ad15-e8c9-606e-3d76.ngrok-free.app") {
     this.socket = io(url);
@@ -42,6 +44,10 @@ export class Client {
     if (!this.publicVapidKey) {
       throw new Error("Public Vapid Key is not set");
     }
+  }
+
+  token() {
+    return localStorage.getItem("t_auth");
   }
 
   urlBase64ToUint8Array(base64String: string) {
@@ -62,9 +68,28 @@ export class Client {
     return this;
   }
 
-  public connection(info: ConnectionInfo): Client {
-    this.connectionInfo = info;
-    return this;
+  public connection(connectionInfo: any): Promise<this> {
+    this.connectionInfo = connectionInfo;
+  
+    return new Promise((resolve, reject) => {
+      if (!this.dbType || !this.connectionInfo) {
+        reject(new Error("Database type and connection info must be provided."));
+        return;
+      }
+      this.socket.emit("initialize", {
+        dbType: this.dbType,
+        connectionInfo: this.connectionInfo,
+      });
+      this.socket.once("initialized", () => {
+        console.log("Socket initialized");
+        this.isInitialized = true;
+        resolve(this);
+      });
+      this.socket.once("error", (error: any) => {
+        this.isInitialized = false;
+        reject(new Error(error.message));
+      });
+    });
   }
 
   private initialize() {
@@ -75,6 +100,50 @@ export class Client {
       dbType: this.dbType,
       connectionInfo: this.connectionInfo,
     });
+  }
+
+  private initializeAsync(): Promise<void> {
+    // Ha már inicializálva van, vagy folyamatban van az inicializálás, várjuk meg
+    if (this.isInitialized) {
+      return Promise.resolve();
+    }
+    if (this.initializePromise) {
+      return this.initializePromise;
+    }
+
+    if (!this.dbType || !this.connectionInfo) {
+      return Promise.reject(new Error("Database type and connection info must be provided."));
+    }
+
+    // Új Promise létrehozása az inicializáláshoz
+    this.initializePromise = new Promise((resolve, reject) => {
+      this.socket.emit("initialize", {
+        dbType: this.dbType,
+        connectionInfo: this.connectionInfo,
+      });
+
+      this.socket.once("initialized", () => {
+        console.log("Socket initialized");
+        this.isInitialized = true;
+        resolve();
+      });
+
+      // Hibakezelés, ha az inicializálás sikertelen
+      this.socket.once("error", (error: any) => {
+        this.isInitialized = false;
+        this.initializePromise = null; // Reseteljük, hogy újra próbálkozhassunk
+        reject(new Error(error.message));
+      });
+    });
+
+    return this.initializePromise;
+  }
+
+  // Biztosítja, hogy az inicializálás megtörténjen, mielőtt bármilyen műveletet végrehajtunk
+  private async ensureInitialized(): Promise<void> {
+    if (this.connectionInfo) {
+      await this.initializeAsync();
+    }
   }
 
   private initializeNotification() {
@@ -352,10 +421,64 @@ export class Client {
     this.socket.on("account:result", (response) => {
       console.log("SignIn response:", response);
       if (response.status === "success" && response.token && response.sessionId) {
-        document.cookie = `t_auth=${response.sessionId} ; path=/`;
-        localStorage.setItem("t_auth", response.token);
+        document.cookie = `t_auth_super=${response.sessionId} ; path=/`;
+        localStorage.setItem("t_auth_super", response.token);
       }
       callback(response); // Hibák esetén is továbbítjuk a választ
+    });
+    return this;
+  }
+
+  public signUpSuper(email: string, password: string, callback: (data: any) => void): Client {
+    this.initialize();
+    const salt = bcrypt.genSaltSync(10);
+    const hashedPassword = bcrypt.hashSync(password, salt);
+    const userData = { email, password: hashedPassword, createdAt: new Date() };
+
+    this.socket.emit("account:action", {
+      action: "signupSuper",
+      data: userData,
+    });
+
+    this.socket.on("account:result", (response) => {
+      console.log("SignUp response:", response);
+      if (response.status === "success" && response.token && response.sessionId) {
+        document.cookie = `t_auth=${response.sessionId} ; path=/`;
+        localStorage.setItem("t_auth", response.token);
+        document.cookie = `t_auth_super=${response.sessionId} ; path=/`;
+        localStorage.setItem("t_auth_super", response.token);
+      }
+      callback(response);
+    });
+
+    return this;
+  }
+
+  public signInSuper(email: string, password: string, callback: (data: any) => void): Client {
+    this.initialize();
+    this.socket.emit("account:action", {
+      action: "signinSuper",
+      data: { email, password },
+    });
+    this.socket.on("account:result", (response) => {
+      console.log("SignIn response:", response);
+      if (response.status === "success" && response.token && response.sessionId) {
+        document.cookie = `t_auth=${response.sessionId} ; path=/`;
+        localStorage.setItem("t_auth", response.token);
+        document.cookie = `t_auth_super=${response.sessionId} ; path=/`;
+        localStorage.setItem("t_auth_super", response.token);
+      }
+      callback(response); // Hibák esetén is továbbítjuk a választ
+    });
+    return this;
+  }
+
+  public validate(token: string, callback: (data: any) => void): Client {
+    this.initialize();
+    this.socket.emit("account:action", { action: "validate", token });
+    this.socket.on("account:result", (response) => {
+      console.log("Validate response:", response);
+      callback(response);
     });
     return this;
   }
@@ -545,10 +668,12 @@ export class Client {
       this.initialize();
     }
 
-    return new Promise((resolve, reject) => {
-      this.socket.emit('createBucket');
+    const token = localStorage.getItem("t_auth");
 
-      this.socket.once('bucketCreated', ({ bucketId }: { bucketId: string }) => {
+    return new Promise((resolve, reject) => {
+      this.socket.emit('bucket:action', { action: 'create', token });
+
+      this.socket.once('bucket:created', ({ bucketId }: { bucketId: string }) => {
         console.log(`Bucket created: ${bucketId}`);
         resolve(bucketId);
       });
@@ -560,11 +685,12 @@ export class Client {
     });
   }
 
-  // Upload a file to a bucket
   public async uploadFile(bucketId: string, file: { name: string; type: string; data: ArrayBuffer }): Promise<string> {
     if (this.connectionInfo) {
       this.initialize();
     }
+
+    const token = localStorage.getItem("t_auth");
     
     if (!bucketId || !file || !file.name || !file.type || !file.data) {
       console.log('Uploading file to bucket:', bucketId, file);
@@ -573,9 +699,9 @@ export class Client {
     }
 
     return new Promise((resolve, reject) => {
-      this.socket.emit('uploadFile', { bucketId, file });
+      this.socket.emit('bucket:action', {action: 'upload', bucketId, file, token });
 
-      this.socket.once('fileUploaded', ({ bucketId: returnedBucketId, fileId }: { bucketId: string; fileId: string }) => {
+      this.socket.once('file:uploaded', ({ bucketId: returnedBucketId, fileId }: { bucketId: string; fileId: string }) => {
         console.log(`File uploaded to ${returnedBucketId}: ${fileId}`);
         resolve(fileId);
       });
@@ -587,7 +713,6 @@ export class Client {
     });
   }
 
-  // Retrieve a file from a bucket
   public async getFile(bucketId: string, fileId: string): Promise<{ fileName: string; fileType: string; fileData: ArrayBuffer }> {
     if (this.connectionInfo) {
       this.initialize();
@@ -597,12 +722,14 @@ export class Client {
       throw new Error('Bucket ID and file ID are required');
     }
 
-    return new Promise((resolve, reject) => {
-      this.socket.emit('getFile', { bucketId, fileId });
+    const token = localStorage.getItem("t_auth");
 
-      this.socket.once('fileRetrieved', (file: { fileName: string; fileType: string; fileData: ArrayBuffer }) => {
-        console.log(`File retrieved from ${bucketId}: ${file.fileName}`);
-        resolve(file);
+    return new Promise((resolve, reject) => {
+      this.socket.emit('bucket:action', {action: 'get', bucketId, fileId, token });
+
+      this.socket.once('file:retrieved', (retrievedFile: { fileName: string; fileType: string; fileData: ArrayBuffer }) => {
+        console.log(`File retrieved from ${bucketId}: ${retrievedFile.fileName}`);
+        resolve(retrievedFile);
       });
 
       this.socket.once('error', ({ message }: { message: string }) => {
@@ -612,7 +739,6 @@ export class Client {
     });
   }
 
-  // List all files in a bucket
   public async listFiles(bucketId: string): Promise<{ id: string; fileName: string; fileType: string; createdAt: string; updatedAt: string }[]> {
     if (this.connectionInfo) {
       this.initialize();
@@ -622,10 +748,12 @@ export class Client {
       throw new Error('Bucket ID is required');
     }
 
-    return new Promise((resolve, reject) => {
-      this.socket.emit('listFiles', { bucketId });
+    const token = localStorage.getItem("t_auth");
 
-      this.socket.once('filesListed', ({ bucketId: returnedBucketId, files }: { bucketId: string; files: any[] }) => {
+    return new Promise((resolve, reject) => {
+      this.socket.emit('bucket:action', {action:'list', bucketId, token });
+
+      this.socket.once('file:listed', ({ bucketId: returnedBucketId, files }: { bucketId: string; files: any[] }) => {
         console.log(`Listed ${files.length} files in ${returnedBucketId}`);
         resolve(files);
       });
@@ -637,7 +765,6 @@ export class Client {
     });
   }
   
-  // Delete a file from a bucket
   public async deleteFile(bucketId: string, fileId: string): Promise<void> {
     if (this.connectionInfo) {
       this.initialize();
@@ -647,10 +774,12 @@ export class Client {
       throw new Error('Bucket ID and file ID are required');
     }
 
-    return new Promise((resolve, reject) => {
-      this.socket.emit('deleteFile', { bucketId, fileId });
+    const token = localStorage.getItem("t_auth");
 
-      this.socket.once('fileDeleted', ({ bucketId: returnedBucketId, fileId: deletedFileId }: { bucketId: string; fileId: string }) => {
+    return new Promise((resolve, reject) => {
+      this.socket.emit('bucket:action', {action: 'deleteFile', bucketId, fileId, token});
+
+      this.socket.once('file:delete', ({ bucketId: returnedBucketId, fileId: deletedFileId }: { bucketId: string; fileId: string }) => {
         console.log(`File ${deletedFileId} deleted from ${returnedBucketId}`);
         resolve();
       });
@@ -662,16 +791,17 @@ export class Client {
     });
   }
 
-  // List all buckets
   public async listBuckets(): Promise<string[]> {
     if (this.connectionInfo) {
       this.initialize();
     }
+    
+    const token = localStorage.getItem("t_auth");
 
     return new Promise((resolve, reject) => {
-      this.socket.emit("listBuckets");
+      this.socket.emit("bucket:action", { action: "bucketList", token});
 
-      this.socket.once("bucketsListed", ({ buckets }: { buckets: string[] }) => {
+      this.socket.once("bucket:listed", ({ buckets }: { buckets: string[] }) => {
         console.log(`Listed ${buckets.length} buckets`);
         resolve(buckets);
       });
@@ -683,7 +813,6 @@ export class Client {
     });
   }
 
-  // Delete a bucket
   public async deleteBucket(bucketId: string): Promise<void> {
     if (this.connectionInfo) {
       this.initialize();
@@ -693,10 +822,12 @@ export class Client {
       throw new Error("Bucket ID is required");
     }
 
-    return new Promise((resolve, reject) => {
-      this.socket.emit("deleteBucket", { bucketId });
+    const token = localStorage.getItem("t_auth");
 
-      this.socket.once("bucketDeleted", ({ bucketId: deletedBucketId }: { bucketId: string }) => {
+    return new Promise((resolve, reject) => {
+      this.socket.emit("bucket:action", {action: 'delete', bucketId, token });
+
+      this.socket.once("bucket:deleted", ({ bucketId: deletedBucketId }: { bucketId: string }) => {
         console.log(`Bucket ${deletedBucketId} deleted`);
         resolve();
       });
@@ -708,7 +839,6 @@ export class Client {
     });
   }
 
-  // Rename a bucket
   public async renameBucket(oldBucketId: string, newBucketId: string): Promise<void> {
     if (this.connectionInfo) {
       this.initialize();
@@ -718,10 +848,12 @@ export class Client {
       throw new Error("Old and new bucket IDs are required");
     }
 
-    return new Promise((resolve, reject) => {
-      this.socket.emit("renameBucket", { oldBucketId, newBucketId });
+    const token = localStorage.getItem("t_auth");
 
-      this.socket.once("bucketRenamed", ({ oldBucketId: oldId, newBucketId: newId }: { oldBucketId: string; newBucketId: string }) => {
+    return new Promise((resolve, reject) => {
+      this.socket.emit("bucket:action", {action: 'rename', bucketId: oldBucketId, newBucketId, token });
+
+      this.socket.once("bucket:renamed", ({ oldBucketId: oldId, newBucketId: newId }: { oldBucketId: string; newBucketId: string }) => {
         console.log(`Bucket renamed from ${oldId} to ${newId}`);
         resolve();
       });
@@ -730,6 +862,229 @@ export class Client {
         console.log(`Error renaming bucket: ${message}`);
         reject(new Error(message));
       });
+    });
+  }
+
+//------ PERMISSION SCOPE ------
+
+  public async createPermission(itemId: string, requireAction: string, requireRole: string | null): Promise<any> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    return new Promise((resolve, reject) => {
+      this.socket.emit("permission", { action: "create", itemId, requireAction, requireRole });
+      this.socket.once("permissionCreated", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async getPermission(permissionId: string): Promise<any> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    return new Promise((resolve, reject) => {
+      this.socket.emit("permission", { action: "get", permissionId });
+      this.socket.once("permission", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async getPermissions(itemId: string | null): Promise<any> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    return new Promise((resolve, reject) => {
+      this.socket.emit("permission", { action: "getAll", itemId });
+      this.socket.once("permissions", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async updatePermission(permissionId: string, itemId: string, requireAction: string, requireRole: string | null): Promise<any> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    return new Promise((resolve, reject) => {
+      this.socket.emit("permission", { action: "update", permissionId, itemId, requireAction, requireRole });
+      this.socket.once("permissionUpdated", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async deletePermission(permissionId: string): Promise<any> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    return new Promise((resolve, reject) => {
+      this.socket.emit("permission", { action: "delete", permissionId });
+      this.socket.once("permissionDeleted", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async createUserPermission(userId: string, onDoc: string, permission: string): Promise<any> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    return new Promise((resolve, reject) => {
+      this.socket.emit("userPermission", { action: "create", userId, onDoc, permission });
+      this.socket.once("userPermissionCreated", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async getUserPermissions(userId: string, onDoc: string | null): Promise<any> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    return new Promise((resolve, reject) => {
+      this.socket.emit("userPermission", { action: "getAll", userId, onDoc });
+      this.socket.once("userPermissions", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async updateUserPermission(permissionId: string, onDoc: string, permission: string): Promise<any> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    return new Promise((resolve, reject) => {
+      this.socket.emit("userPermission", { action: "update", permissionId, onDoc, permission });
+      this.socket.once("userPermissionUpdated", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async deleteUserPermission(permissionId: string): Promise<any> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    return new Promise((resolve, reject) => {
+      this.socket.emit("userPermission", { action: "delete", permissionId });
+      this.socket.once("userPermissionDeleted", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async checkUserPermission(userId: string, onDoc: string, requiredPermission: string): Promise<any> {
+    if (this.connectionInfo) {
+      this.initialize();
+    }
+    return new Promise((resolve, reject) => {
+      this.socket.emit("userPermission", { action: "check", userId, onDoc, requiredPermission });
+      this.socket.once("userPermissionCheck", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+//------ TEAMS SCOPE ------
+  public async createTeam(name: string, styling: string, creatorId: string): Promise<any> {
+    if (this.connectionInfo) this.initialize();
+    const token = localStorage.getItem("t_auth");
+    return new Promise((resolve, reject) => {
+      this.socket.emit("teams", { action: "create", name, styling, creatorId, token });
+      this.socket.once("teamCreated", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async getTeam(teamId: string): Promise<any> {
+    if (this.connectionInfo) this.initialize();
+    const token = localStorage.getItem("t_auth");
+    return new Promise((resolve, reject) => {
+      this.socket.emit("teams", { action: "get", teamId, token });
+      this.socket.once("team", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async getTeams(userId: string | null): Promise<any> {
+    if (this.connectionInfo) this.initialize();
+    const token = localStorage.getItem("t_auth");
+    return new Promise((resolve, reject) => {
+      this.socket.emit("teams", { action: "getAll", userId, token });
+      this.socket.once("teams", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async updateTeam(teamId: string, name: string, styling: string, userId: string): Promise<any> {
+    if (this.connectionInfo) this.initialize();
+    const token = localStorage.getItem("t_auth");
+    return new Promise((resolve, reject) => {
+      this.socket.emit("teams", { action: "update", teamId, name, styling, userId, token });
+      this.socket.once("teamUpdated", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async deleteTeam(teamId: string, userId: string): Promise<any> {
+    if (this.connectionInfo) this.initialize();
+    const token = localStorage.getItem("t_auth");
+    return new Promise((resolve, reject) => {
+      this.socket.emit("teams", { action: "delete", teamId, userId, token });
+      this.socket.once("teamDeleted", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async addTeamUser(teamId: string, userId: string, role: string, addedBy: string): Promise<any> {
+    if (this.connectionInfo) this.initialize();
+    const token = localStorage.getItem("t_auth");
+    return new Promise((resolve, reject) => {
+      this.socket.emit("teams", { action: "addUser", teamId, userId, role, addedBy, token });
+      this.socket.once("teamUserAdded", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async removeTeamUser(teamId: string, userId: string, removedBy: string): Promise<any> {
+    if (this.connectionInfo) this.initialize();
+    const token = localStorage.getItem("t_auth");
+    return new Promise((resolve, reject) => {
+      this.socket.emit("teams", { action: "removeUser", teamId, userId, removedBy, token });
+      this.socket.once("teamUserRemoved", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async updateTeamUserRole(teamId: string, userId: string, role: string, updatedBy: string): Promise<any> {
+    if (this.connectionInfo) this.initialize();
+    const token = localStorage.getItem("t_auth");
+    return new Promise((resolve, reject) => {
+      this.socket.emit("teams", { action: "updateUserRole", teamId, userId, role, updatedBy, token });
+      this.socket.once("teamUserRoleUpdated", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async updateTeamUserLabels(teamId: string, userId: string, labels: string[], updatedBy: string): Promise<any> {
+    if (this.connectionInfo) this.initialize();
+    const token = localStorage.getItem("t_auth");
+    return new Promise((resolve, reject) => {
+      this.socket.emit("teams", { action: "updateUserLabels", teamId, userId, labels, updatedBy, token });
+      this.socket.once("teamUserLabelsUpdated", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async leaveTeam(teamId: string, userId: string): Promise<any> {
+    if (this.connectionInfo) this.initialize();
+    const token = localStorage.getItem("t_auth");
+    return new Promise((resolve, reject) => {
+      this.socket.emit("teams", { action: "leave", teamId, userId, token });
+      this.socket.once("teamUserLeft", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
+    });
+  }
+
+  public async listTeams(): Promise<any> {
+    if (this.connectionInfo) this.initialize();
+    const token = localStorage.getItem("t_auth");
+    return new Promise((resolve, reject) => {
+      this.socket.emit("teams", { action: "listAll", token });
+      this.socket.once("teams", (data: any) => resolve(data));
+      this.socket.once("error", (error: any) => reject(new Error(error.message)));
     });
   }
 
