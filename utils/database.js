@@ -705,9 +705,8 @@ class Database {
   }
 
 //---- Permission Scope ----
-
-  // Create a new permission
-  async createPermission(itemId, requireAction, requireRole = null) {
+async createPermission(itemId, requireAction, requireRole = null) {
+  try {
     if (this.type === "mysql") {
       const [result] = await this.db.query(
         `INSERT INTO permissions (item_id, require_action, require_role) VALUES (?, ?, ?)`,
@@ -724,10 +723,14 @@ class Database {
       });
       return { id: result.insertedId };
     }
+  } catch (error) {
+    throw new Error(`Error in createPermission (${this.type}): ${error.message}`);
   }
+}
 
-  // Read a permission by ID
-  async getPermission(permissionId) {
+// Read a permission by ID
+async getPermission(permissionId) {
+  try {
     if (this.type === "mysql") {
       const [rows] = await this.db.query(
         `SELECT id, item_id, require_action, require_role FROM permissions WHERE id = ?`,
@@ -740,10 +743,14 @@ class Database {
       if (!permission) throw new Error("Permission not found");
       return permission;
     }
+  } catch (error) {
+    throw new Error(`Error in getPermission (${this.type}): ${error.message}`);
   }
+}
 
-  // Read all permissions (optional filter by item_id)
-  async getPermissions(itemId = null) {
+// Read all permissions (optional filter by item_id)
+async getPermissions(itemId = null) {
+  try {
     if (this.type === "mysql") {
       const [rows] = await this.db.query(
         `SELECT id, item_id, require_action, require_role FROM permissions WHERE item_id = ? OR ? IS NULL`,
@@ -755,10 +762,14 @@ class Database {
       const permissions = await this.db.collection("permissions").find(query).toArray();
       return permissions;
     }
+  } catch (error) {
+    throw new Error(`Error in getPermissions (${this.type}): ${error.message}`);
   }
+}
 
-  // Update a permission
-  async updatePermission(permissionId, itemId, requireAction, requireRole = null) {
+// Update a permission
+async updatePermission(permissionId, itemId, requireAction, requireRole = null) {
+  try {
     if (this.type === "mysql") {
       const [result] = await this.db.query(
         `UPDATE permissions SET item_id = ?, require_action = ?, require_role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
@@ -774,10 +785,14 @@ class Database {
       if (result.matchedCount === 0) throw new Error("Permission not found or no changes made");
       return { success: true };
     }
+  } catch (error) {
+    throw new Error(`Error in updatePermission (${this.type}): ${error.message}`);
   }
+}
 
-  // Delete a permission
-  async deletePermission(permissionId) {
+// Delete a permission
+async deletePermission(permissionId) {
+  try {
     if (this.type === "mysql") {
       const [result] = await this.db.query(
         `DELETE FROM permissions WHERE id = ?`,
@@ -790,12 +805,16 @@ class Database {
       if (result.deletedCount === 0) throw new Error("Permission not found");
       return { success: true };
     }
+  } catch (error) {
+    throw new Error(`Error in deletePermission (${this.type}): ${error.message}`);
   }
+}
 
 //---- User Permission Scope ----
 
-  // Create a new user permission (add access for a user to a document/route)
-  async createUserPermission(userId, onDoc, permission) {
+// Create a new user permission (add access for a user to a document/route)
+async createUserPermission(userId, onDoc, permission) {
+  try {
     if (this.type === "mysql") {
       const [result] = await this.db.query(
         `INSERT INTO user_permissions (user_id, onDoc, permission) VALUES (?, ?, ?)`,
@@ -812,10 +831,14 @@ class Database {
       });
       return { id: result.insertedId };
     }
+  } catch (error) {
+    throw new Error(`Error in createUserPermission (${this.type}): ${error.message}`);
   }
+}
 
-  // Read a user permission by ID
-  async getUserPermission(permissionId) {
+// Read a user permission by ID
+async getUserPermission(permissionId) {
+  try {
     if (this.type === "mysql") {
       const [rows] = await this.db.query(
         `SELECT id, user_id, onDoc, permission FROM user_permissions WHERE id = ?`,
@@ -828,10 +851,14 @@ class Database {
       if (!permission) throw new Error("User permission not found");
       return permission;
     }
+  } catch (error) {
+    throw new Error(`Error in getUserPermission (${this.type}): ${error.message}`);
   }
+}
 
-  // Read all permissions for a specific user (optional filter by onDoc)
-  async getUserPermissions(userId, onDoc = null) {
+// Read all permissions for a specific user (optional filter by onDoc)
+async getUserPermissions(userId, onDoc = null) {
+  try {
     if (this.type === "mysql") {
       const [rows] = await this.db.query(
         `SELECT id, user_id, onDoc, permission 
@@ -846,10 +873,14 @@ class Database {
       const permissions = await this.db.collection("user_permissions").find(query).toArray();
       return permissions;
     }
+  } catch (error) {
+    throw new Error(`Error in getUserPermissions (${this.type}): ${error.message}`);
   }
+}
 
-  // Update a user permission
-  async updateUserPermission(permissionId, onDoc, permission) {
+// Update a user permission
+async updateUserPermission(permissionId, onDoc, permission) {
+  try {
     if (this.type === "mysql") {
       const [result] = await this.db.query(
         `UPDATE user_permissions 
@@ -867,10 +898,14 @@ class Database {
       if (result.matchedCount === 0) throw new Error("User permission not found or no changes made");
       return { success: true };
     }
+  } catch (error) {
+    throw new Error(`Error in updateUserPermission (${this.type}): ${error.message}`);
   }
+}
 
-  // Delete a user permission
-  async deleteUserPermission(permissionId) {
+// Delete a user permission
+async deleteUserPermission(permissionId) {
+  try {
     if (this.type === "mysql") {
       const [result] = await this.db.query(
         `DELETE FROM user_permissions WHERE id = ?`,
@@ -883,10 +918,14 @@ class Database {
       if (result.deletedCount === 0) throw new Error("User permission not found");
       return { success: true };
     }
+  } catch (error) {
+    throw new Error(`Error in deleteUserPermission (${this.type}): ${error.message}`);
   }
+}
 
-  // Check if a user has a specific permission for a document/route
-  async checkUserPermission(userId, onDoc, requiredPermission) {
+// Check if a user has a specific permission for a document/route
+async checkUserPermission(userId, onDoc, requiredPermission) {
+  try {
     if (this.type === "mysql") {
       const [rows] = await this.db.query(
         `SELECT permission 
@@ -903,12 +942,16 @@ class Database {
       });
       return !!permission;
     }
+  } catch (error) {
+    throw new Error(`Error in checkUserPermission (${this.type}): ${error.message}`);
   }
+}
 
 //----- TEAM SCOPE -----
 
-  // Team CRUD
-  async createTeam({ name, styling, creatorId }) {
+// Team CRUD
+async createTeam({ name, styling, creatorId }) {
+  try {
     if (this.type === "mysql") {
       const [result] = await this.client.execute(
         "INSERT INTO teams (name, styling) VALUES (?, ?)",
@@ -925,9 +968,13 @@ class Database {
       });
       return { id: result.insertedId, name, styling, labels: [] };
     }
+  } catch (error) {
+    throw new Error(`Error in createTeam (${this.type}): ${error.message}`);
   }
+}
 
-  async getTeam(teamId) {
+async getTeam(teamId) {
+  try {
     if (this.type === "mysql") {
       const [rows] = await this.client.execute(
         `
@@ -970,7 +1017,7 @@ class Database {
         .collection("teams")
         .findOne({ _id: this.toObjectId(teamId) });
 
-        console.log("team", team); // Hibakeresés
+      console.log("team", team); // Hibakeresés
 
       if (!team) {
         return null; // Ha a csapat nem létezik
@@ -993,12 +1040,14 @@ class Database {
           labels: member.labels || [],
         })),
       };
-    } else {
-      throw new Error("Unsupported database type");
     }
+  } catch (error) {
+    throw new Error(`Error in getTeam (${this.type}): ${error.message}`);
   }
+}
 
-  async getTeams(userId) {
+async getTeams(userId) {
+  try {
     if (this.type === "mysql") {
       const [rows] = await this.client.execute(
         `
@@ -1011,9 +1060,9 @@ class Database {
         `,
         [userId]
       );
-  
+
       const teamsMap = {};
-  
+
       rows.forEach((row) => {
         const teamId = row.id;
         if (!teamsMap[teamId]) {
@@ -1032,7 +1081,7 @@ class Database {
           labels: row.user_labels ? JSON.parse(row.user_labels) : [],
         });
       });
-  
+
       return { teams: Object.values(teamsMap) };
     } else if (this.type === "mongodb") {
       console.log("userId", userId);
@@ -1040,45 +1089,45 @@ class Database {
       const teamIds = await this.db
         .collection("team_users")
         .distinct("team_id", { user_id: userId });
-  
+
       console.log("teamIds", teamIds); // Hibakeresés
-  
+
       if (!teamIds || teamIds.length === 0) {
         return { teams: [] };
       }
-  
+
       // Ellenőrizzük, hogy a teamIds elemei stringek legyenek
       const validTeamIds = teamIds
         .filter((id) => id && typeof id === "string")
         .map((id) => this.toObjectId(id));
-  
+
       if (validTeamIds.length === 0) {
         console.log("No valid teamIds found");
         return { teams: [] };
       }
-  
+
       // Csapatok lekérdezése
       const teams = await this.db
         .collection("teams")
         .find({ _id: { $in: validTeamIds } })
         .toArray();
-  
+
       console.log("teams", teams); // Hibakeresés
-  
+
       if (!teams || teams.length === 0) {
         return { teams: [] };
       }
-  
+
       // Csapattagok lekérdezése
       const teamMembers = await this.db
         .collection("team_users")
         .find({ team_id: { $in: teamIds } })
         .toArray();
-  
+
       console.log("teamMembers", teamMembers); // Hibakeresés
-  
+
       const teamsMap = {};
-  
+
       teams.forEach((team) => {
         // Ellenőrizzük, hogy a team és _id létezik
         if (team && team._id) {
@@ -1093,7 +1142,7 @@ class Database {
           };
         }
       });
-  
+
       teamMembers.forEach((member) => {
         // Ellenőrizzük, hogy a member és team_id létezik
         if (member && member.team_id) {
@@ -1108,15 +1157,15 @@ class Database {
         }
       });
 
-      
-  
       return { teams: Object.values(teamsMap) };
-    } else {
-      throw new Error("Unsupported database type");
     }
+  } catch (error) {
+    throw new Error(`Error in getTeams (${this.type}): ${error.message}`);
   }
+}
 
-  async updateTeam(teamId, name, styling, userId) {
+async updateTeam(teamId, name, styling, userId) {
+  try {
     if (this.type === "mysql") {
       await this.client.execute(
         "UPDATE teams SET name = ?, styling = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -1131,9 +1180,13 @@ class Database {
       );
       return result.value;
     }
+  } catch (error) {
+    throw new Error(`Error in updateTeam (${this.type}): ${error.message}`);
   }
+}
 
-  async deleteTeam(teamId, userId) {
+async deleteTeam(teamId, userId) {
+  try {
     if (this.type === "mysql") {
       await this.client.execute("DELETE FROM teams WHERE id = ?", [teamId]);
       return { id: teamId };
@@ -1141,10 +1194,14 @@ class Database {
       await this.db.collection('teams').deleteOne({ _id: this.toObjectId(teamId) });
       return { id: teamId };
     }
+  } catch (error) {
+    throw new Error(`Error in deleteTeam (${this.type}): ${error.message}`);
   }
+}
 
-  // Team Users CRUD
-  async addTeamUser(teamId, userId, role, addedBy) {
+// Team Users CRUD
+async addTeamUser(teamId, userId, role, addedBy) {
+  try {
     if (this.type === "mysql") {
       const [result] = await this.client.execute(
         "INSERT INTO team_users (team_id, user_id, role) VALUES (?, ?, ?)",
@@ -1162,9 +1219,13 @@ class Database {
       });
       return { _id: result.insertedId, team_id: teamId, user_id: userId, role };
     }
+  } catch (error) {
+    throw new Error(`Error in addTeamUser (${this.type}): ${error.message}`);
   }
+}
 
-  async removeTeamUser(teamId, userId, removedBy) {
+async removeTeamUser(teamId, userId, removedBy) {
+  try {
     if (this.type === "mysql") {
       await this.client.execute("DELETE FROM team_users WHERE team_id = ? AND user_id = ?", [teamId, userId]);
       return { team_id: teamId, user_id: userId };
@@ -1172,9 +1233,13 @@ class Database {
       await this.db.collection('team_users').deleteOne({ team_id: teamId, user_id: userId });
       return { team_id: teamId, user_id: userId };
     }
+  } catch (error) {
+    throw new Error(`Error in removeTeamUser (${this.type}): ${error.message}`);
   }
+}
 
-  async updateTeamUserRole(teamId, userId, role, updatedBy) {
+async updateTeamUserRole(teamId, userId, role, updatedBy) {
+  try {
     if (this.type === "mysql") {
       await this.client.execute(
         "UPDATE team_users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE team_id = ? AND user_id = ?",
@@ -1189,9 +1254,13 @@ class Database {
       );
       return { team_id: teamId, user_id: userId, role };
     }
+  } catch (error) {
+    throw new Error(`Error in updateTeamUserRole (${this.type}): ${error.message}`);
   }
+}
 
-  async updateTeamUserLabels(teamId, userId, labels, updatedBy) {
+async updateTeamUserLabels(teamId, userId, labels, updatedBy) {
+  try {
     if (this.type === "mysql") {
       await this.client.execute(
         "UPDATE team_users SET labels = ?, updated_at = CURRENT_TIMESTAMP WHERE team_id = ? AND user_id = ?",
@@ -1206,9 +1275,13 @@ class Database {
       );
       return { team_id: teamId, user_id: userId, labels };
     }
+  } catch (error) {
+    throw new Error(`Error in updateTeamUserLabels (${this.type}): ${error.message}`);
   }
+}
 
-  async getTeamUserRole(teamId, userId) {
+async getTeamUserRole(teamId, userId) {
+  try {
     if (this.type === "mysql") {
       const [rows] = await this.client.execute(
         "SELECT role FROM team_users WHERE team_id = ? AND user_id = ?",
@@ -1222,9 +1295,13 @@ class Database {
       );
       return result?.role;
     }
+  } catch (error) {
+    throw new Error(`Error in getTeamUserRole (${this.type}): ${error.message}`);
   }
+}
 
-  async listTeams() {
+async listTeams() {
+  try {
     if (this.type === "mysql") {
       const [rows] = await this.client.execute("SELECT * FROM teams");
       return rows;
@@ -1232,7 +1309,221 @@ class Database {
       const result = await this.db.collection('teams').find().toArray();
       return result;
     }
+  } catch (error) {
+    throw new Error(`Error in listTeams (${this.type}): ${error.message}`);
   }
+}
+//---- labels and preferences ----
+  //---- Labels and Preferences ----
+
+// Labels CRUD Methods
+
+// Set (Replace) the entire labels array for a user
+async setUserLabels(userId, labels) {
+  try {
+    if (this.type === "mysql") {
+      await this.client.execute(
+        "UPDATE users SET labels = ? WHERE id = ?",
+        [JSON.stringify(labels), userId]
+      );
+      return { user_id: userId, labels };
+    } else if (this.type === "mongodb") {
+      const result = await this.db.collection('users').findOneAndUpdate(
+        { _id: this.toObjectId(userId) },
+        { $set: { labels, updated_at: new Date() } },
+        { returnDocument: 'after' }
+      );
+      if (!result.value) throw new Error("User not found");
+      return { user_id: userId, labels };
+    }
+  } catch (error) {
+    throw new Error(`Error in setUserLabels (${this.type}): ${error.message}`);
+  }
+}
+
+// Retrieve the labels array for a user
+async getUserLabels(userId) {
+  try {
+    if (this.type === "mysql") {
+      const [rows] = await this.client.execute(
+        "SELECT labels FROM users WHERE id = ?",
+        [userId]
+      );
+      if (rows.length === 0) throw new Error("User not found");
+      return rows[0].labels ? JSON.parse(rows[0].labels) : [];
+    } else if (this.type === "mongodb") {
+      const user = await this.db.collection('users').findOne(
+        { _id: this.toObjectId(userId) },
+        { projection: { labels: 1 } }
+      );
+      if (!user) throw new Error("User not found");
+      return user.labels || [];
+    }
+  } catch (error) {
+    throw new Error(`Error in getUserLabels (${this.type}): ${error.message}`);
+  }
+}
+
+// Delete the entire labels array for a user (set to empty array)
+async deleteUserLabels(userId) {
+  try {
+    if (this.type === "mysql") {
+      await this.client.execute(
+        "UPDATE users SET labels = ? WHERE id = ?",
+        [JSON.stringify([]), userId]
+      );
+      return { user_id: userId, labels: [] };
+    } else if (this.type === "mongodb") {
+      const result = await this.db.collection('users').findOneAndUpdate(
+        { _id: this.toObjectId(userId) },
+        { $set: { labels: [], updated_at: new Date() } },
+        { returnDocument: 'after' }
+      );
+      if (!result.value) throw new Error("User not found");
+      return { user_id: userId, labels: [] };
+    }
+  } catch (error) {
+    throw new Error(`Error in deleteUserLabels (${this.type}): ${error.message}`);
+  }
+}
+
+// Preferences CRUD Methods
+
+// Update or add a specific key-value pair in the preferences object
+async updateUserPreference(userId, key, value) {
+  try {
+    if (this.type === "mysql") {
+      // First, get the current preferences
+      const [rows] = await this.client.execute(
+        "SELECT preferences FROM users WHERE id = ?",
+        [userId]
+      );
+      if (rows.length === 0) throw new Error("User not found");
+
+      // Parse the current preferences (or initialize as empty object)
+      const currentPrefs = rows[0].preferences ? JSON.parse(rows[0].preferences) : {};
+      
+      // Update the specific key with the new value
+      currentPrefs[key] = value;
+
+      // Save the updated preferences
+      await this.client.execute(
+        "UPDATE users SET preferences = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        [JSON.stringify(currentPrefs), userId]
+      );
+      return { user_id: userId, preferences: currentPrefs };
+    } else if (this.type === "mongodb") {
+      const result = await this.db.collection('users').findOneAndUpdate(
+        { _id: this.toObjectId(userId) },
+        { $set: { [`preferences.${key}`]: value, updated_at: new Date() } },
+        { returnDocument: 'after' }
+      );
+      if (!result.value) throw new Error("User not found");
+      return { user_id: userId, preferences: result.value.preferences || {} };
+    }
+  } catch (error) {
+    throw new Error(`Error in updateUserPreference (${this.type}): ${error.message}`);
+  }
+}
+
+// Delete a specific key from the preferences object
+async deleteUserPreferenceKey(userId, key) {
+  try {
+    if (this.type === "mysql") {
+      // First, get the current preferences
+      const [rows] = await this.client.execute(
+        "SELECT preferences FROM users WHERE id = ?",
+        [userId]
+      );
+      if (rows.length === 0) throw new Error("User not found");
+
+      // Parse the current preferences (or initialize as empty object)
+      const currentPrefs = rows[0].preferences ? JSON.parse(rows[0].preferences) : {};
+
+      // Remove the specific key
+      if (key in currentPrefs) {
+        delete currentPrefs[key];
+      }
+
+      // Save the updated preferences
+      await this.client.execute(
+        "UPDATE users SET preferences = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        [JSON.stringify(currentPrefs), userId]
+      );
+      return { user_id: userId, preferences: currentPrefs };
+    } else if (this.type === "mongodb") {
+      const result = await this.db.collection('users').findOneAndUpdate(
+        { _id: this.toObjectId(userId) },
+        { $unset: { [`preferences.${key}`]: "" }, $set: { updated_at: new Date() } },
+        { returnDocument: 'after' }
+      );
+      if (!result.value) throw new Error("User not found");
+      return { user_id: userId, preferences: result.value.preferences || {} };
+    }
+  } catch (error) {
+    throw new Error(`Error in deleteUserPreferenceKey (${this.type}): ${error.message}`);
+  }
+}
+
+// Retrieve the entire preferences object for a user
+async getUserPreferences(userId) {
+  try {
+    if (this.type === "mysql") {
+      const [rows] = await this.client.execute(
+        "SELECT preferences FROM users WHERE id = ?",
+        [userId]
+      );
+      if (rows.length === 0) throw new Error("User not found");
+      return rows[0].preferences ? JSON.parse(rows[0].preferences) : {};
+    } else if (this.type === "mongodb") {
+      const user = await this.db.collection('users').findOne(
+        { _id: this.toObjectId(userId) },
+        { projection: { preferences: 1 } }
+      );
+      if (!user) throw new Error("User not found");
+      return user.preferences || {};
+    }
+  } catch (error) {
+    throw new Error(`Error in getUserPreferences (${this.type}): ${error.message}`);
+  }
+}
+
+// Set a new key-value pair in the preferences object (explicitly for adding new pairs)
+async setUserPreference(userId, key, value) {
+  try {
+    if (this.type === "mysql") {
+      // First, get the current preferences
+      const [rows] = await this.client.execute(
+        "SELECT preferences FROM users WHERE id = ?",
+        [userId]
+      );
+      if (rows.length === 0) throw new Error("User not found");
+
+      // Parse the current preferences (or initialize as empty object)
+      const currentPrefs = rows[0].preferences ? JSON.parse(rows[0].preferences) : {};
+
+      // Add the new key-value pair (if the key already exists, it will be updated)
+      currentPrefs[key] = value;
+
+      // Save the updated preferences
+      await this.client.execute(
+        "UPDATE users SET preferences = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        [JSON.stringify(currentPrefs), userId]
+      );
+      return { user_id: userId, preferences: currentPrefs };
+    } else if (this.type === "mongodb") {
+      const result = await this.db.collection('users').findOneAndUpdate(
+        { _id: this.toObjectId(userId) },
+        { $set: { [`preferences.${key}`]: value, updated_at: new Date() } },
+        { returnDocument: 'after' }
+      );
+      if (!result.value) throw new Error("User not found");
+      return { user_id: userId, preferences: result.value.preferences || {} };
+    }
+  } catch (error) {
+    throw new Error(`Error in setUserPreference (${this.type}): ${error.message}`);
+  }
+}
 
 // ---- EXECUTION ----
 

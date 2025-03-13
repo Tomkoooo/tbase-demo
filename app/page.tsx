@@ -58,6 +58,12 @@ const App: React.FC = () => {
       description: "Create and manage teams with customization and user permissions. Manage teams on MongoDB or MySQL.",
       path: "/teams",
       color: "bg-gray-500 hover:bg-gray-600",
+    },
+    {
+      title: "Account Prefernces And Labels",
+      description: "Manage user account preferences and labels. Manage preferences on MongoDB or MySQL.",
+      path: "/account-preferences",
+      color: "bg-yellow-500 hover:bg-yellow-600",
     }
   ];
 
@@ -77,7 +83,7 @@ const App: React.FC = () => {
         {demoSections.map((section) => (
           <Link key={section.title} href={section.path} className="group">
             <div
-              className={`shadow-lg rounded-lg p-6 text-white ${section.color} transform transition duration-300 group-hover:scale-105 group-hover:shadow-xl`}
+              className={`shadow-lg min-h-52 rounded-lg p-6 text-white ${section.color} transform transition duration-300 group-hover:scale-105 group-hover:shadow-xl`}
             >
               <h2 className="text-2xl font-semibold mb-2">{section.title}</h2>
               <p className="text-sm opacity-90 group-hover:opacity-100">

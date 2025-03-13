@@ -1,8 +1,10 @@
 # Tbase - Simple Socket-Based Backend Library
 
-![npm](https://img.shields.io/npm/v/tbase) ![License](https://img.shields.io/npm/l/tbase)
+![npm](https://img.shields.io/npm/v/@tomkoooo/tbase) ![License](https://img.shields.io/npm/l/@tomkoooo/tbase)
 
 **Tbase** is a lightweight, socket-based backend solution packed into a single npm library. With just one `Client` class and a prebuilt server, you can set up a fully functional backend in as little as 10 lines of code. No need for complex API routes or server modifications—Tbase handles it all out of the box.
+
+**Demo at: [Here](https://github.com/Tomkoooo/tbase-demo)**
 
 ## Key Features
 - **Real-Time Sockets**: Built-in WebSocket support for effortless real-time communication.
@@ -14,15 +16,18 @@
 - **Push Notifications**: Cross-platform notifications with VAPID and APNs support.
 - **SSR & CSR**: Works on both server-side rendering (SSR) and client-side rendering (CSR).
 - **Frontend Freedom**: Control everything from the frontend—no backend setup required.
+- **Permission and Preferences**: On account and users-scope.
+
+- **Mailer**: Send mails and handle user verifications on the frontend. (in development.)
 
 ---
 
 ## Getting Started
 
 ### Installation
-Install Tbase via npm: (currently still in development)
+Install Tbase via npm: (still in development)
 ```bash
-npm install tbase
+npm install @tomkoooo/tbase
 ```
 ### Basic Setup
 Tbase provides a Client class as the main entry point. Initialize it with optional WebSocket server URI (defaults to localhost:3000 if not specified).
@@ -266,6 +271,16 @@ export const getSession = async (sessionId) => {
 - async listBuckets()
 - async deleteBucket(bucketId)
 - async renameBucket(oldBucketId, newBucketId)
+
+***Permissions***
+- item permissions
+  - async createPermission(itemId, requireAction, requireRole = null)
+  - async getPermission(permissionId)
+  - async getPermissions(itemId = null)
+  - async updatePermission(permissionId, itemId, requireAction, requireRole = null)
+  - async deletePermission(permissionId)
+- user permissions
+
 ***
 ### 8.Configuration
 **Connection Info**

@@ -488,16 +488,24 @@ export class Client {
     getSession: (callback: (data: any) => void) => Client;
     getSessions: (callback: (data: any) => void) => Client;
     setSession: (sessionData: string, callback: (data: any) => void) => Client;
-    killSession: ( callback: (data: any) => void) => Client;
+    killSession: (callback: (data: any) => void) => Client;
     killSessions: (callback: (data: any) => void) => Client;
-    changeSession: (newSessionString: string, callback: (data: any) => void) => Client;} {
+    changeSession: (newSessionString: string, callback: (data: any) => void) => Client;
+    setLabels: (labels: string[], callback: (data: any) => void) => Client;
+    getLabels: (callback: (data: any) => void) => Client;
+    deleteLabels: (callback: (data: any) => void) => Client;
+    setPreference: (key: string, value: any, callback: (data: any) => void) => Client;
+    updatePreference: (key: string, value: any, callback: (data: any) => void) => Client;
+    deletePreferenceKey: (key: string, callback: (data: any) => void) => Client;
+    getPreferences: (callback: (data: any) => void) => Client;
+  } {
     this.initialize();
-
+  
     function getCookie(cname: string) {
       let name = cname + "=";
       let decodedCookie = decodeURIComponent(document.cookie);
       let ca = decodedCookie.split(';');
-      for(let i = 0; i <ca.length; i++) {
+      for (let i = 0; i < ca.length; i++) {
         let c = ca[i];
         while (c.charAt(0) == ' ') {
           c = c.substring(1);
@@ -508,7 +516,7 @@ export class Client {
       }
       return "";
     }
-
+  
     return {
       get: (callback: (data: any) => void): Client => {
         const token = localStorage.getItem("t_auth");
@@ -548,7 +556,6 @@ export class Client {
         return this;
       },
       killSession: (callback: (data: any) => void): Client => {
-        //get the session id from the cookies
         const token = localStorage.getItem("t_auth");
         const session = getCookie("t_auth");
         this.socket.emit("account:action", { action: "killSession", token, session });
@@ -563,7 +570,6 @@ export class Client {
         return this;
       },
       killSessions: (callback: (data: any) => void): Client => {
-        //get the session id from the cookies
         const session = getCookie("t_auth");
         this.socket.emit("account:action", { action: "killSessions", session });
         this.socket.on("account:result", (response) => {
@@ -585,6 +591,78 @@ export class Client {
         });
         return this;
       },
+  
+      // Labels Management
+      setLabels: (labels: string[], callback: (data: any) => void): Client => {
+        const token = localStorage.getItem("t_auth");
+        this.socket.emit("labels:action", { action: "setLabels", token, labels });
+        this.socket.on("labels:result", (response) => {
+          console.log("Set labels response:", response);
+          callback(response);
+        });
+        return this;
+      },
+  
+      getLabels: (callback: (data: any) => void): Client => {
+        const token = localStorage.getItem("t_auth");
+        this.socket.emit("labels:action", { action: "getLabels", token });
+        this.socket.on("labels:result", (response) => {
+          console.log("Get labels response:", response);
+          callback(response);
+        });
+        return this;
+      },
+  
+      deleteLabels: (callback: (data: any) => void): Client => {
+        const token = localStorage.getItem("t_auth");
+        this.socket.emit("labels:action", { action: "deleteLabels", token });
+        this.socket.on("labels:result", (response) => {
+          console.log("Delete labels response:", response);
+          callback(response);
+        });
+        return this;
+      },
+  
+      // Preferences Management
+      setPreference: (key: string, value: any, callback: (data: any) => void): Client => {
+        const token = localStorage.getItem("t_auth");
+        this.socket.emit("preferences:action", { action: "setPreference", token, key, value });
+        this.socket.on("preferences:result", (response) => {
+          console.log("Set preference response:", response);
+          callback(response);
+        });
+        return this;
+      },
+  
+      updatePreference: (key: string, value: any, callback: (data: any) => void): Client => {
+        const token = localStorage.getItem("t_auth");
+        this.socket.emit("preferences:action", { action: "updatePreference", token, key, value });
+        this.socket.on("preferences:result", (response) => {
+          console.log("Update preference response:", response);
+          callback(response);
+        });
+        return this;
+      },
+  
+      deletePreferenceKey: (key: string, callback: (data: any) => void): Client => {
+        const token = localStorage.getItem("t_auth");
+        this.socket.emit("preferences:action", { action: "deletePreferenceKey", token, key });
+        this.socket.on("preferences:result", (response) => {
+          console.log("Delete preference key response:", response);
+          callback(response);
+        });
+        return this;
+      },
+  
+      getPreferences: (callback: (data: any) => void): Client => {
+        const token = localStorage.getItem("t_auth");
+        this.socket.emit("preferences:action", { action: "getPreferences", token });
+        this.socket.on("preferences:result", (response) => {
+          console.log("Get preferences response:", response);
+          callback(response);
+        });
+        return this;
+      },
     };
   }
 
@@ -597,70 +675,151 @@ export class Client {
   }
 
 //------ USERS SCOPE ------
-  public users(): {
-    listAll: (callback: (data: any[]) => void) => Client;
-    listOnline: (callback: (data: any[]) => void) => Client;
-    listenOnlineUsers: (callback: (data: any[]) => void) => Client;
-    getUser: (userId: string, callback: (data: any) => void) => Client; 
-    getUsers: (userIds: string[], callback: (data: any) => void) => Client;
-  } {
-    this.initialize();
-    return {
-      listAll: (callback: (data: any[]) => void): Client => {
-        const token = localStorage.getItem("t_auth");
-        this.socket.emit("users:action", { action: "listAll", token });
-        this.socket.on("users:result", (response) => {
-          console.log("List all users response:", response);
-          if (response.status === "success") {
-            callback(response.data);
-          } else {
-            callback([]);
-          }
-        });
-        return this;
-      },
-      listOnline: (callback: (data: any[]) => void): Client => {
-        const token = localStorage.getItem("t_auth");
-        this.socket.emit("users:action", { action: "listOnline", token });
-        this.socket.on("users:online", (response) => {
-          console.log("List online users response:", response);
-          if (response.status === "success") {
-            console.log("Online users:", response.data);
-            callback(response.data);
-          } else {
-            callback([]);
-          }
-        });
-        return this;
-      },
-      listenOnlineUsers: (callback: (data: any[]) => void): Client => {
-        this.socket.emit("subscribe", "users:onlineChanged");
-        this.socket.on("users:onlineChanged", (onlineUsersData) => {
-          console.log("Online users changed:", onlineUsersData);
-          callback(onlineUsersData); // Közvetlenül a kapott adatokat adjuk át
-        });
-        return this;
-      },
-      getUser: (userId: string, callback: (data: any) => void): Client => {
-        const token = localStorage.getItem("t_auth");
-        this.socket.emit("users:action", { action: "getUser", token, userId });
-        this.socket.on("users:get-user", (response) => {
-          console.log("Get user response:", response);
-          callback(response);
-        });
-        return this;
-      },
-      getUsers: (userIds: string[], callback: (data: any) => void): Client => {
-        const token = localStorage.getItem("t_auth");
-        this.socket.emit("users:action", { action: "getUsers", token, userIds });
-        this.socket.on("users:get-users", (response) => {
-          console.log("Get users response:", response);
-          callback(response);
-        });
-        return this;
-      },
-    };
-  }
+public users(): {
+  listAll: (callback: (data: any[]) => void) => Client;
+  listOnline: (callback: (data: any[]) => void) => Client;
+  listenOnlineUsers: (callback: (data: any[]) => void) => Client;
+  getUser: (userId: string, callback: (data: any) => void) => Client;
+  getUsers: (userIds: string[], callback: (data: any) => void) => Client;
+  // Labels Management
+  setLabels: (userId: string, labels: string[], callback: (data: any) => void) => Client;
+  getLabels: (userId: string, callback: (data: any) => void) => Client;
+  deleteLabels: (userId: string, callback: (data: any) => void) => Client;
+  // Preferences Management
+  setPreference: (userId: string, key: string, value: any, callback: (data: any) => void) => Client;
+  updatePreference: (userId: string, key: string, value: any, callback: (data: any) => void) => Client;
+  deletePreferenceKey: (userId: string, key: string, callback: (data: any) => void) => Client;
+  getPreferences: (userId: string, callback: (data: any) => void) => Client;
+} {
+  this.initialize();
+  return {
+    listAll: (callback: (data: any[]) => void): Client => {
+      const token = localStorage.getItem("t_auth");
+      this.socket.emit("users:action", { action: "listAll", token });
+      this.socket.on("users:result", (response) => {
+        console.log("List all users response:", response);
+        if (response.status === "success") {
+          callback(response.data);
+        } else {
+          callback([]);
+        }
+      });
+      return this;
+    },
+    listOnline: (callback: (data: any[]) => void): Client => {
+      const token = localStorage.getItem("t_auth");
+      this.socket.emit("users:action", { action: "listOnline", token });
+      this.socket.on("users:online", (response) => {
+        console.log("List online users response:", response);
+        if (response.status === "success") {
+          console.log("Online users:", response.data);
+          callback(response.data);
+        } else {
+          callback([]);
+        }
+      });
+      return this;
+    },
+    listenOnlineUsers: (callback: (data: any[]) => void): Client => {
+      this.socket.emit("subscribe", "users:onlineChanged");
+      this.socket.on("users:onlineChanged", (onlineUsersData) => {
+        console.log("Online users changed:", onlineUsersData);
+        callback(onlineUsersData);
+      });
+      return this;
+    },
+    getUser: (userId: string, callback: (data: any) => void): Client => {
+      const token = localStorage.getItem("t_auth");
+      this.socket.emit("users:action", { action: "getUser", token, userId });
+      this.socket.on("users:get-user", (response) => {
+        console.log("Get user response:", response);
+        callback(response);
+      });
+      return this;
+    },
+    getUsers: (userIds: string[], callback: (data: any) => void): Client => {
+      const token = localStorage.getItem("t_auth");
+      this.socket.emit("users:action", { action: "getUsers", token, userIds });
+      this.socket.on("users:get-users", (response) => {
+        console.log("Get users response:", response);
+        callback(response);
+      });
+      return this;
+    },
+
+    // Labels Management
+    setLabels: (userId: string, labels: string[], callback: (data: any) => void): Client => {
+      const token = localStorage.getItem("t_auth");
+      this.socket.emit("labels:action", { action: "setLabels", token, userId, labels });
+      this.socket.on("labels:result", (response) => {
+        console.log("Set labels response:", response);
+        callback(response);
+      });
+      return this;
+    },
+
+    getLabels: (userId: string, callback: (data: any) => void): Client => {
+      const token = localStorage.getItem("t_auth");
+      this.socket.emit("labels:action", { action: "getLabels", token, userId });
+      this.socket.on("labels:result", (response) => {
+        console.log("Get labels response:", response);
+        callback(response);
+      });
+      return this;
+    },
+
+    deleteLabels: (userId: string, callback: (data: any) => void): Client => {
+      const token = localStorage.getItem("t_auth");
+      this.socket.emit("labels:action", { action: "deleteLabels", token, userId });
+      this.socket.on("labels:result", (response) => {
+        console.log("Delete labels response:", response);
+        callback(response);
+      });
+      return this;
+    },
+
+    // Preferences Management
+    setPreference: (userId: string, key: string, value: any, callback: (data: any) => void): Client => {
+      const token = localStorage.getItem("t_auth");
+      this.socket.emit("preferences:action", { action: "setPreference", token, userId, key, value });
+      this.socket.on("preferences:result", (response) => {
+        console.log("Set preference response:", response);
+        callback(response);
+      });
+      return this;
+    },
+
+    updatePreference: (userId: string, key: string, value: any, callback: (data: any) => void): Client => {
+      const token = localStorage.getItem("t_auth");
+      this.socket.emit("preferences:action", { action: "updatePreference", token, userId, key, value });
+      this.socket.on("preferences:result", (response) => {
+        console.log("Update preference response:", response);
+        callback(response);
+      });
+      return this;
+    },
+
+    deletePreferenceKey: (userId: string, key: string, callback: (data: any) => void): Client => {
+      const token = localStorage.getItem("t_auth");
+      this.socket.emit("preferences:action", { action: "deletePreferenceKey", token, userId, key });
+      this.socket.on("preferences:result", (response) => {
+        console.log("Delete preference key response:", response);
+        callback(response);
+      });
+      return this;
+    },
+
+    getPreferences: (userId: string, callback: (data: any) => void): Client => {
+      const token = localStorage.getItem("t_auth");
+      this.socket.emit("preferences:action", { action: "getPreferences", token, userId });
+      this.socket.on("preferences:result", (response) => {
+        console.log("Get preferences response:", response);
+        callback(response);
+      });
+      return this;
+    },
+  };
+}
 
 //------- BUCKET SCOPE -------
   public async createBucket(): Promise<string> {

@@ -1099,6 +1099,164 @@ app.prepare().then(() => {
     }
   });
 
+// ----- LABELS - PREFENCES -------
+socket.on("labels:action", async (data) => {
+  const { action, token } = data;
+  const db = clientDatabases.get(socket.id);
+
+  if (!db) {
+    socket.emit("labels:result", {
+      status: "error",
+      message: "Database not initialized",
+    });
+    return;
+  }
+
+  if (!token) {
+    socket.emit("labels:result", {
+      status: "error",
+      message: "No token provided",
+    });
+    return;
+  }
+
+  try {
+    
+    let userId;
+    if (token) {
+      const decoded = jwt.verify(token, SECRET_KEY);
+      userId = decoded.userId;
+    } else {
+      userId = data.userId;
+    }
+
+    switch (action) {
+      case "setLabels":
+        if (!userId) throw new Error("No userId provided");
+        try {
+          const labels = data.labels;
+          if (!labels || !Array.isArray(labels)) throw new Error("Invalid labels array");
+          const result = await db.setUserLabels(userId, labels);
+          socket.emit("labels:result", { status: "success", data: result });
+        } catch (err) {
+          socket.emit("labels:set-labels", { status: "error", message: err.message });
+        }
+        break;
+
+      case "getLabels":
+        if (!userId) throw new Error("No userId provided");
+        try {
+          const labels = await db.getUserLabels(userId);
+          socket.emit("labels:result", { status: "success", data: labels });
+        } catch (err) {
+          socket.emit("labels:get-labels", { status: "error", message: err.message });
+        }
+        break;
+
+      case "deleteLabels":
+        if (!userId) throw new Error("No userId provided");
+        try {
+          const result = await db.deleteUserLabels(userId);
+          socket.emit("labels:result", { status: "success", data: result });
+        } catch (err) {
+          socket.emit("labels:delete-labels", { status: "error", message: err.message });
+        }
+        break;
+
+      default:
+        socket.emit("labels:result", {
+          status: "error",
+          message: "Unknown action",
+        });
+    }
+  } catch (err) {
+    console.error("Labels action error:", err.message);
+    socket.emit("labels:result", { status: "error", message: err.message });
+  }
+});
+
+socket.on("preferences:action", async (data) => {
+  const { action, token, key, value } = data;
+  const db = clientDatabases.get(socket.id);
+
+  if (!db) {
+    socket.emit("preferences:result", {
+      status: "error",
+      message: "Database not initialized",
+    });
+    return;
+  }
+
+  if (!token) {
+    socket.emit("preferences:result", {
+      status: "error",
+      message: "No token provided",
+    });
+    return;
+  }
+
+  try {
+    let userId;
+    if (token) {
+      const decoded = jwt.verify(token, SECRET_KEY);
+      userId = decoded.userId;
+    } else {
+      userId = data.userId;
+    }
+
+    switch (action) {
+      case "setPreference":
+        if (!userId || !key || value === undefined) throw new Error("userId, key, and value are required");
+        try {
+          const result = await db.setUserPreference(userId, key, value);
+          socket.emit("preferences:result", { status: "success", data: result });
+        } catch (err) {
+          socket.emit("preferences:set-preference", { status: "error", message: err.message });
+        }
+        break;
+
+      case "updatePreference":
+        if (!userId || !key || value === undefined) throw new Error("userId, key, and value are required");
+        try {
+          const result = await db.updateUserPreference(userId, key, value);
+          socket.emit("preferences:result", { status: "success", data: result });
+        } catch (err) {
+          socket.emit("preferences:update-preference", { status: "error", message: err.message });
+        }
+        break;
+
+      case "deletePreferenceKey":
+        if (!userId || !key) throw new Error("userId and key are required");
+        try {
+          const result = await db.deleteUserPreferenceKey(userId, key);
+          socket.emit("preferences:result", { status: "success", data: result });
+        } catch (err) {
+          socket.emit("preferences:delete-preference-key", { status: "error", message: err.message });
+        }
+        break;
+
+      case "getPreferences":
+        if (!userId) throw new Error("No userId provided");
+        try {
+          const preferences = await db.getUserPreferences(userId);
+          socket.emit("preferences:result", { status: "success", data: preferences });
+        } catch (err) {
+          socket.emit("preferences:get-preferences", { status: "error", message: err.message });
+        }
+        break;
+
+      default:
+        socket.emit("preferences:result", {
+          status: "error",
+          message: "Unknown action",
+        });
+    }
+  } catch (err) {
+    console.error("Preferences action error:", err.message);
+    socket.emit("preferences:result", { status: "error", message: err.message });
+  }
+});
+
   });
 
   httpServer.listen(port, () => {
