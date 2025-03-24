@@ -681,6 +681,7 @@ public users(): {
   listenOnlineUsers: (callback: (data: any[]) => void) => Client;
   getUser: (userId: string, callback: (data: any) => void) => Client;
   getUsers: (userIds: string[], callback: (data: any) => void) => Client;
+  //getUsers (list all users without the given ids)
   // Labels Management
   setLabels: (userId: string, labels: string[], callback: (data: any) => void) => Client;
   getLabels: (userId: string, callback: (data: any) => void) => Client;
@@ -690,6 +691,9 @@ public users(): {
   updatePreference: (userId: string, key: string, value: any, callback: (data: any) => void) => Client;
   deletePreferenceKey: (userId: string, key: string, callback: (data: any) => void) => Client;
   getPreferences: (userId: string, callback: (data: any) => void) => Client;
+  //for super users
+  //- delete user
+  //- create user
 } {
   this.initialize();
   return {
