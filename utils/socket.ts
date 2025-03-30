@@ -38,7 +38,7 @@ export class Client {
   private isInitialized = false;
   private initializePromise: Promise<void> | null = null;
 
-  constructor(url: string = "https://52ee-2a02-ab88-6787-1c80-ad15-e8c9-606e-3d76.ngrok-free.app") {
+  constructor(url: string = "localhost:3000") {
     this.socket = io(url);
     this.publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC!;
     if (!this.publicVapidKey) {

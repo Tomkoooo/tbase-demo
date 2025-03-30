@@ -1,8 +1,10 @@
-// database/mongodb.js
-import { MongoClient } from "mongodb";
+// server/database/mongodb.js
+import { MongoClient, ObjectId } from "mongodb";
 import { Database } from "./base.js";
 import { accountMethods } from "./methods/account.js";
 import { usersMethods } from "./methods/users.js";
+import { notificationMethods } from "./methods/notification.js";
+import { bucketMethods } from "./methods/bucket.js"; // Bucket metódusok importálása
 
 export class MongoDB extends Database {
   constructor() {
@@ -23,6 +25,7 @@ export class MongoDB extends Database {
       await this.client.close();
       this.client = null;
       this.db = null;
+      console.log("MongoDB connection closed");
     }
   }
 
@@ -71,6 +74,22 @@ export class MongoDB extends Database {
       return { status: "error", method, error: `MongoDB execution error: ${err.message}` };
     }
   }
+
+  // Bucket metódusok
+  createBucket() { return bucketMethods.createBucket(this.db); }
+  uploadFile(bucketId, file) { return bucketMethods.uploadFile(this.db, bucketId, file); }
+  getFile(bucketId, fileId) { return bucketMethods.getFile(this.db, bucketId, fileId); }
+  listFiles(bucketId) { return bucketMethods.listFiles(this.db, bucketId); }
+  deleteFile(bucketId, fileId) { return bucketMethods.deleteFile(this.db, bucketId, fileId); }
+  listBuckets() { return bucketMethods.listBuckets(this.db); }
+  deleteBucket(bucketId) { return bucketMethods.deleteBucket(this.db, bucketId); }
+  renameBucket(oldBucketId, newBucketId) { return bucketMethods.renameBucket(this.db, oldBucketId, newBucketId); }
+
+  // Notification metódusok
+  storeSubscription(userId, subscription) { return notificationMethods.storeSubscription(this.db, userId, subscription); }
+  upsert(table, data) { return notificationMethods.upsert(this.db, table, data); }
+  delete(table, query) { return notificationMethods.delete(this.db, table, query); }
+  find(table, query) { return notificationMethods.find(this.db, table, query); }
 
   // Account metódusok
   signUp(payload) { return accountMethods.signUp(this.db, payload); }

@@ -5,7 +5,7 @@ export const client = new Client()
 export const mongoClient = await new Client()
 .database("mongodb")
 .connection({
-  url: "mongodb://localhost:27017",
+  url: "mongodb+srv://admin:admin@culster0.tfml4.mongodb.net/?retryWrites=true&w=majority&appName=culster0",
   dbName: "socket-test",
 });
 

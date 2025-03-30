@@ -1,9 +1,11 @@
-// socket.ts
+// socket/socket.ts
 import { io, Socket } from "socket.io-client";
 import { Account } from "./socket/account";
 import { Users } from "./socket/users";
 import { Channels } from "./socket/channel";
-import { Database } from "./socket/database"; // Új import
+import { Database } from "./socket/database";
+import { subscribeNotification } from "./socket/notification";
+import { Bucket } from "./socket/bucket"; // Bucket importálása
 
 interface ConnectionInfo {
   url?: string;
@@ -26,6 +28,9 @@ export class ClientConnection {
   public users: Users;
   public channels: Channels;
   public database: Database;
+  public notification: subscribeNotification;
+  public bucket: Bucket; // Bucket hozzáadása
+  public publicVapidKey: string;
 
   constructor(url: string = "localhost:3000") {
     this.socket = io(url);
@@ -33,6 +38,12 @@ export class ClientConnection {
     this.users = new Users(this.socket, this);
     this.channels = new Channels(this.socket, this);
     this.database = new Database(this.socket, this);
+    this.notification = new subscribeNotification(this.socket, this);
+    this.bucket = new Bucket(this.socket, this); // Bucket inicializálása
+    this.publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC!;
+    if (!this.publicVapidKey) {
+      throw new Error("Public Vapid Key is not set");
+    }
   }
 
   public async initialize(dbType: "mongodb" | "mysql", connectionInfo: ConnectionInfo): Promise<void> {

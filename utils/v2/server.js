@@ -8,6 +8,8 @@ import { setupAccountHandlers } from "./server/methods/account.js";
 import { setupUsersHandlers } from "./server/methods/users.js";
 import { setupChannelsHandlers } from "./server/methods/channel.js";
 import { setupDatabaseHandlers } from "./server/methods/database.js";
+import { setupNotificationHandlers } from "./server/methods/notification.js";
+import { setupBucketHandlers } from "./server/methods/bucket.js"; // Bucket handler importálása
 
 const app = next({ dev, hostname, port });
 const handler = app.getRequestHandler();
@@ -19,24 +21,28 @@ app.prepare().then(() => {
   });
 
   const clientDatabases = new Map();
-  const onlineUsers = new Map(); // Online felhasználók tárolása
-  const channelClients = new Map(); // Csatorna kliensek tárolása
+  const onlineUsers = new Map();
+  const channelClients = new Map();
+  let notificationHandler;
 
   io.on("connection", (socket) => {
     console.log("Client connected:", socket.id);
 
-    // Eseménykezelők inicializálása
     const initHandler = setupInitialization(io, clientDatabases);
-    const accountHandler = setupAccountHandlers(io, clientDatabases, onlineUsers); // onlineUsers átadása
-    const usersHandler = setupUsersHandlers(io, clientDatabases, onlineUsers); // onlineUsers átadása
-    const channelsHandler = setupChannelsHandlers(io, clientDatabases, channelClients); // channelClients átadása
-    const databaseHandler = setupDatabaseHandlers(io, clientDatabases, channelClients); // channelClients átadása
+    const accountHandler = setupAccountHandlers(io, clientDatabases, onlineUsers);
+    const usersHandler = setupUsersHandlers(io, clientDatabases, onlineUsers);
+    const channelsHandler = setupChannelsHandlers(io, clientDatabases, channelClients);
+    const databaseHandler = setupDatabaseHandlers(io, clientDatabases, channelClients);
+    const notificationHandlerSetup = setupNotificationHandlers(io, clientDatabases, () => notificationHandler, (handler) => { notificationHandler = handler; });
+    const bucketHandler = setupBucketHandlers(io, clientDatabases); // Bucket handler hozzáadása
 
     initHandler(socket);
     accountHandler(socket);
     usersHandler(socket);
     channelsHandler(socket);
     databaseHandler(socket);
+    notificationHandlerSetup(socket);
+    bucketHandler(socket);
   });
 
   httpServer.listen(port, () => {
