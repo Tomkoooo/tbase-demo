@@ -1,8 +1,7 @@
-// socket/account.js
 import jwt from "jsonwebtoken";
 import { SECRET_KEY } from "../../dist/config.js";
 import { getDatabase, handleError } from "../utils.js";
-import { updateOnlineUsers } from "./users.js"; // Import hozzáadása
+import { updateOnlineUsers } from "./users.js";
 
 export function setupAccountHandlers(io, clientDatabases, onlineUsers) {
   return (socket) => {
@@ -19,8 +18,10 @@ export function setupAccountHandlers(io, clientDatabases, onlineUsers) {
         switch (action) {
           case "signup":
             const userId = await db.signUp(data);
+            const sId = Math.random().toString(16).slice(2); // Egyszerű sessionId generálás
+            await db.setSession(userId, sId); // Session tárolása az adatbázisban
             const token = jwt.sign({ userId }, SECRET_KEY, { expiresIn: "1h" });
-            socket.emit("account:result", { status: "success", token, userId });
+            socket.emit("account:result", { status: "success", token, sessionId: sId, userId });
             break;
 
           case "signin":
@@ -73,11 +74,6 @@ export function setupAccountHandlers(io, clientDatabases, onlineUsers) {
             socket.emit("account:result", { status: "success", ...setLabelsResult });
             break;
 
-          case "deleteLabels":
-            const deleteLabelsResult = await db.deleteLabels(data.token, SECRET_KEY);
-            socket.emit("account:result", { status: "success", ...deleteLabelsResult });
-            break;
-
           case "getPreferences":
             const preferences = await db.getPreferences(data.token, SECRET_KEY);
             socket.emit("account:result", { status: "success", preferences });
@@ -86,16 +82,6 @@ export function setupAccountHandlers(io, clientDatabases, onlineUsers) {
           case "setPreferences":
             const setPrefsResult = await db.setPreferences(data.token, data.preferences, SECRET_KEY);
             socket.emit("account:result", { status: "success", ...setPrefsResult });
-            break;
-
-          case "updatePreferences":
-            const updatePrefsResult = await db.updatePreferences(data.token, data.key, data.value, SECRET_KEY);
-            socket.emit("account:result", { status: "success", ...updatePrefsResult });
-            break;
-
-          case "deletePreferences":
-            const deletePrefsResult = await db.deletePreferences(data.token, data.key, SECRET_KEY);
-            socket.emit("account:result", { status: "success", ...deletePrefsResult });
             break;
 
           default:

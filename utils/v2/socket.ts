@@ -5,7 +5,9 @@ import { Users } from "./socket/users";
 import { Channels } from "./socket/channel";
 import { Database } from "./socket/database";
 import { subscribeNotification } from "./socket/notification";
-import { Bucket } from "./socket/bucket"; // Bucket importálása
+import { Bucket } from "./socket/bucket";
+import { Permission } from "./socket/permission"; // Permission importálása
+import { Teams } from "./socket/teams"; // Teams importálása
 
 interface ConnectionInfo {
   url?: string;
@@ -23,14 +25,15 @@ export class ClientConnection {
   private connectionInfo: ConnectionInfo | null = null;
   private isInitialized = false;
 
-  // Alosztályok
   public account: Account;
   public users: Users;
   public channels: Channels;
   public database: Database;
   public notification: subscribeNotification;
-  public bucket: Bucket; // Bucket hozzáadása
+  public bucket: Bucket;
+  public permission: Permission; // Permission hozzáadása
   public publicVapidKey: string;
+  public teams: Teams; // Teams hozzáadása
 
   constructor(url: string = "localhost:3000") {
     this.socket = io(url);
@@ -39,7 +42,9 @@ export class ClientConnection {
     this.channels = new Channels(this.socket, this);
     this.database = new Database(this.socket, this);
     this.notification = new subscribeNotification(this.socket, this);
-    this.bucket = new Bucket(this.socket, this); // Bucket inicializálása
+    this.bucket = new Bucket(this.socket, this);
+    this.permission = new Permission(this.socket, this); // Permission inicializálása
+    this.teams = new Teams(this.socket, this); // Teams inicializálása
     this.publicVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC!;
     if (!this.publicVapidKey) {
       throw new Error("Public Vapid Key is not set");

@@ -8,8 +8,10 @@ import { setupAccountHandlers } from "./server/methods/account.js";
 import { setupUsersHandlers } from "./server/methods/users.js";
 import { setupChannelsHandlers } from "./server/methods/channel.js";
 import { setupDatabaseHandlers } from "./server/methods/database.js";
-import { setupNotificationHandlers } from "./server/methods/notification.js";
-import { setupBucketHandlers } from "./server/methods/bucket.js"; // Bucket handler importálása
+import { setupNotificationHandlers } from "./server/socket/notification.js";
+import { setupBucketHandlers } from "./server/socket/bucket.js";
+import { setupPermissionHandlers } from "./server/socket/permission.js";
+import { setupTeamHandlers } from "./server/socket/teams.js"; // Teams handler importálása
 
 const app = next({ dev, hostname, port });
 const handler = app.getRequestHandler();
@@ -34,7 +36,9 @@ app.prepare().then(() => {
     const channelsHandler = setupChannelsHandlers(io, clientDatabases, channelClients);
     const databaseHandler = setupDatabaseHandlers(io, clientDatabases, channelClients);
     const notificationHandlerSetup = setupNotificationHandlers(io, clientDatabases, () => notificationHandler, (handler) => { notificationHandler = handler; });
-    const bucketHandler = setupBucketHandlers(io, clientDatabases); // Bucket handler hozzáadása
+    const bucketHandler = setupBucketHandlers(io, clientDatabases);
+    const permissionHandler = setupPermissionHandlers(io, clientDatabases);
+    const teamHandler = setupTeamHandlers(io, clientDatabases); // Teams handler hozzáadása
 
     initHandler(socket);
     accountHandler(socket);
@@ -43,6 +47,8 @@ app.prepare().then(() => {
     databaseHandler(socket);
     notificationHandlerSetup(socket);
     bucketHandler(socket);
+    permissionHandler(socket);
+    teamHandler(socket);
   });
 
   httpServer.listen(port, () => {

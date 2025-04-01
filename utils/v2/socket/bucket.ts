@@ -60,6 +60,7 @@ export class Bucket {
       });
     });
   }
+  
 
   public async getFile(bucketId: string, fileId: string): Promise<{ fileName: string; fileType: string; fileData: ArrayBuffer }> {
     this.initializeIfNeeded();

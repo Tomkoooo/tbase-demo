@@ -1,10 +1,12 @@
 // server/database/mongodb.js
 import { MongoClient, ObjectId } from "mongodb";
-import { Database } from "./base.js";
+import { Database } from "../database.js";
 import { accountMethods } from "./methods/account.js";
 import { usersMethods } from "./methods/users.js";
 import { notificationMethods } from "./methods/notification.js";
-import { bucketMethods } from "./methods/bucket.js"; // Bucket metódusok importálása
+import { bucketMethods } from "./methods/bucket.js";
+import { permissionMethods } from "./methods/permission.js";
+import { teamMethods } from "./methods/teams.js"; // Teams metódusok importálása
 
 export class MongoDB extends Database {
   constructor() {
@@ -74,6 +76,34 @@ export class MongoDB extends Database {
       return { status: "error", method, error: `MongoDB execution error: ${err.message}` };
     }
   }
+
+  // Team metódusok
+  createTeam(data) { return teamMethods.createTeam(this.db, data); }
+  getTeam(teamId) { return teamMethods.getTeam(this.db, teamId); }
+  getTeams(userId) { return teamMethods.getTeams(this.db, userId); }
+  updateTeam(teamId, name, styling, userId) { return teamMethods.updateTeam(this.db, teamId, name, styling, userId); }
+  deleteTeam(teamId, userId) { return teamMethods.deleteTeam(this.db, teamId, userId); }
+  addTeamUser(teamId, userId, role, addedBy) { return teamMethods.addTeamUser(this.db, teamId, userId, role, addedBy); }
+  removeTeamUser(teamId, userId, removedBy) { return teamMethods.removeTeamUser(this.db, teamId, userId, removedBy); }
+  updateTeamUserRole(teamId, userId, role, updatedBy) { return teamMethods.updateTeamUserRole(this.db, teamId, userId, role, updatedBy); }
+  updateTeamUserLabels(teamId, userId, labels, updatedBy) { return teamMethods.updateTeamUserLabels(this.db, teamId, userId, labels, updatedBy); }
+  getTeamUserRole(teamId, userId) { return teamMethods.getTeamUserRole(this.db, teamId, userId); }
+  listTeams() { return teamMethods.listTeams(this.db); }
+  checkTeamPermission(teamId, userId, requiredPermission) { return teamMethods.checkTeamPermission(this.db, teamId, userId, requiredPermission); }
+  evaluateTeamPermission(teamId, userId, expression) { return teamMethods.evaluateTeamPermission(this.db, teamId, userId, expression); }
+
+  // Permission metódusok
+  createPermission(itemId, requireAction, requireRole) { return permissionMethods.createPermission(this.db, itemId, requireAction, requireRole); }
+  getPermission(permissionId) { return permissionMethods.getPermission(this.db, permissionId); }
+  getPermissions(itemId) { return permissionMethods.getPermissions(this.db, itemId); }
+  updatePermission(permissionId, itemId, requireAction, requireRole) { return permissionMethods.updatePermission(this.db, permissionId, itemId, requireAction, requireRole); }
+  deletePermission(permissionId) { return permissionMethods.deletePermission(this.db, permissionId); }
+  createUserPermission(userId, onDoc, permission) { return permissionMethods.createUserPermission(this.db, userId, onDoc, permission); }
+  getUserPermissions(userId, onDoc) { return permissionMethods.getUserPermissions(this.db, userId, onDoc); }
+  updateUserPermission(permissionId, onDoc, permission) { return permissionMethods.updateUserPermission(this.db, permissionId, onDoc, permission); }
+  deleteUserPermission(permissionId) { return permissionMethods.deleteUserPermission(this.db, permissionId); }
+  checkUserPermission(userId, onDoc, requiredPermission) { return permissionMethods.checkUserPermission(this.db, userId, onDoc, requiredPermission); }
+  evaluateUserPermission(userId, onDoc, expression) { return permissionMethods.evaluateUserPermission(this.db, userId, onDoc, expression); }
 
   // Bucket metódusok
   createBucket() { return bucketMethods.createBucket(this.db); }

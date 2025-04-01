@@ -20,6 +20,17 @@ export function setupBucketHandlers(io, clientDatabases) {
       try {
         const decoded = jwt.verify(token, SECRET_KEY);
         switch (action) {
+          case "getBucketStats":
+            const collections = await db.listCollections();
+            const bucketCollections = collections.filter((col) => col.name.startsWith("bucket_"));
+            const stats = await Promise.all(
+              bucketCollections.map(async (col) => {
+                const statsResult = await db.collection(col.name).stats();
+                return { bucket: col.name, size: statsResult.size || 0 };
+              })
+            );
+            socket.emit("bucket:result", { stats });
+            break;
           case "create":
             const newId = await db.createBucket();
             socket.emit("bucket:created", { bucketId: newId });

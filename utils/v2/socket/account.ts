@@ -24,29 +24,42 @@ export class Account {
     return "";
   }
 
+  private setCookie(name: string, value: string, days: number = 1) {
+    const expires = new Date();
+    expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
+    document.cookie = `${name}=${value}; path=/; expires=${expires.toUTCString()}`;
+  }
+
   private getToken() {
     return localStorage.getItem("t_auth");
   }
 
-  public signUp(name: string, email: string, password: string, isSuper:boolean = false, callback: (data: any) => void): void {
-    const userData = {name, isSuper, email, password, createdAt: new Date() };
+  public signUp(name: string, email: string, password: string, isSuper: boolean = false, callback: (data: any) => void): void {
+    const userData = { name, isSuper, email, password, createdAt: new Date() };
     this.socket.emit("account:action", { action: "signup", data: userData });
-    this.socket.on("account:result", (response) => {
-      if (response.status === "success" && response.token) {
-        //set jwt, on the server side it will be set as a httpOnly cookie with the sessionId
+    this.socket.once("account:result", (response) => {
+      if (response.status === "success" && response.token && response.sessionId) {
+        this.setCookie("t_auth", response.sessionId);
         localStorage.setItem("t_auth", response.token);
+        if (isSuper) {
+          this.setCookie("t_auth_super", response.sessionId);
+          localStorage.setItem("t_auth_super", response.token);
+        }
       }
       callback(response);
     });
   }
 
-  public signIn(user: string, password: string, isSuper:boolean = false, callback: (data: any) => void): void {
-    //user is either email or username
+  public signIn(user: string, password: string, isSuper: boolean = false, callback: (data: any) => void): void {
     this.socket.emit("account:action", { action: "signin", data: { user, password, isSuper } });
-    this.socket.on("account:result", (response) => {
-      if (response.status === "success" && response.token) {
-         //set jwt, on the server side it will be set as a httpOnly cookie with the sessionId
+    this.socket.once("account:result", (response) => {
+      if (response.status === "success" && response.token && response.sessionId) {
+        this.setCookie("t_auth", response.sessionId);
         localStorage.setItem("t_auth", response.token);
+        if (isSuper) {
+          this.setCookie("t_auth_super", response.sessionId);
+          localStorage.setItem("t_auth_super", response.token);
+        }
       }
       callback(response);
     });
